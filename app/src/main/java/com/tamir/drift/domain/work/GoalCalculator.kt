@@ -100,12 +100,18 @@ object GoalCalculator {
         zone: ZoneId,
         goalAgorot: Long,
         mainRateAgorot: Long,
+        /** Tracking start: days before it are not expected to have saved anything. */
+        startDate: LocalDate? = null,
     ): MonthGoalStatus {
-        val daysInMonth = month.lengthOfMonth()
+        val first = month.atDay(1)
+        val last = month.atEndOfMonth()
+        // The part of the month that counts: from the tracking start (if inside this month) to its end.
+        val effectiveStart = if (startDate != null && startDate.isAfter(first)) startDate else first
+        val daysInMonth = (ChronoUnit.DAYS.between(effectiveStart, last).toInt() + 1).coerceAtLeast(0)
         val daysElapsed = when {
-            today.isBefore(month.atDay(1)) -> 0
-            today.isAfter(month.atEndOfMonth()) -> daysInMonth
-            else -> today.dayOfMonth
+            today.isBefore(effectiveStart) -> 0
+            today.isAfter(last) -> daysInMonth
+            else -> ChronoUnit.DAYS.between(effectiveStart, today).toInt() + 1
         }
         return MonthGoalStatus(
             month = month,
@@ -146,10 +152,11 @@ object GoalCalculator {
         goalAgorot: Long,
         zone: ZoneId,
         months: Int = 6,
+        startDate: LocalDate? = null,
     ): List<MonthSavingHistory> = (months - 1 downTo 0).map { back ->
         val m = endMonth.minusMonths(back.toLong())
         MonthSavingHistory(m, earnedIn(shifts, m) - spentIn(transactions, m, zone), goalAgorot)
-    }
+    }.filter { startDate == null || !it.month.isBefore(YearMonth.from(startDate)) }
 
     // ---- weeks ----
 
@@ -184,19 +191,31 @@ object GoalCalculator {
      * PRD: the week of [today] against the weekly goal. Surplus/deficit of the earlier weeks of
      * the same month is carried in; nothing crosses a month boundary (the balance resets on the 1st).
      */
-    fun weekStatus(shifts: List<ShiftSummary>, today: LocalDate, weeklyGoalAgorot: Long): WeekStatus {
+    fun weekStatus(
+        shifts: List<ShiftSummary>,
+        today: LocalDate,
+        weeklyGoalAgorot: Long,
+        /** Tracking start: weeks that ended before it carry nothing; the week it falls in is pro-rated from it. */
+        startDate: LocalDate? = null,
+    ): WeekStatus {
         val month = YearMonth.from(today)
         val weeks = weeksOfMonth(month)
         val current = weeks.first { it.contains(today) }
+        fun goalFor(w: WeekRange): Long {
+            if (startDate == null || !startDate.isAfter(w.start)) return prorate(weeklyGoalAgorot, w.days)
+            if (startDate.isAfter(w.end)) return 0L
+            return prorate(weeklyGoalAgorot, ChronoUnit.DAYS.between(startDate, w.end).toInt() + 1)
+        }
         var carry = 0L
         for (w in weeks) {
             if (w == current) break
-            carry += incomeIn(shifts, w) - prorate(weeklyGoalAgorot, w.days)
+            if (startDate != null && startDate.isAfter(w.end)) continue
+            carry += incomeIn(shifts, w) - goalFor(w)
         }
         return WeekStatus(
             range = current,
             incomeAgorot = incomeIn(shifts, current),
-            goalAgorot = prorate(weeklyGoalAgorot, current.days),
+            goalAgorot = goalFor(current),
             carryInAgorot = carry,
         )
     }

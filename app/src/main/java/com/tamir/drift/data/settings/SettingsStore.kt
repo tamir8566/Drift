@@ -37,6 +37,8 @@ data class Settings(
     val weeklyIncomeGoalAgorot: Long,
     /** Saturday 20:00 work summary ("סיכום שבוע: הרווחת X מתוך Y"). */
     val workSummaryEnabled: Boolean,
+    /** First day the goal tracking counts from (epoch day). Weeks/months before it are ignored. */
+    val trackingStartEpochDay: Long?,
 ) {
     companion object {
         val DEFAULT_SMS_SENDERS = setOf("max", "MAX", "Max")
@@ -64,6 +66,7 @@ class SettingsStore(private val context: Context) {
         val monthlySavingGoal = longPreferencesKey("monthly_saving_goal")
         val weeklyIncomeGoal = longPreferencesKey("weekly_income_goal")
         val workSummaryEnabled = booleanPreferencesKey("work_summary_enabled")
+        val trackingStart = longPreferencesKey("tracking_start_epoch_day")
     }
 
     val settings: Flow<Settings> = context.dataStore.data.map { p ->
@@ -82,6 +85,7 @@ class SettingsStore(private val context: Context) {
             monthlySavingGoalAgorot = p[Keys.monthlySavingGoal] ?: Settings.DEFAULT_MONTHLY_SAVING_GOAL,
             weeklyIncomeGoalAgorot = p[Keys.weeklyIncomeGoal] ?: Settings.DEFAULT_WEEKLY_INCOME_GOAL,
             workSummaryEnabled = p[Keys.workSummaryEnabled] ?: true,
+            trackingStartEpochDay = p[Keys.trackingStart],
         )
     }
 
@@ -100,4 +104,10 @@ class SettingsStore(private val context: Context) {
     suspend fun setMonthlySavingGoal(agorot: Long) = context.dataStore.edit { it[Keys.monthlySavingGoal] = agorot.coerceAtLeast(0L) }
     suspend fun setWeeklyIncomeGoal(agorot: Long) = context.dataStore.edit { it[Keys.weeklyIncomeGoal] = agorot.coerceAtLeast(0L) }
     suspend fun setWorkSummaryEnabled(v: Boolean) = context.dataStore.edit { it[Keys.workSummaryEnabled] = v }
+    suspend fun setTrackingStart(epochDay: Long) = context.dataStore.edit { it[Keys.trackingStart] = epochDay }
+
+    /** Sets the tracking start to today on first launch, so weeks before the install never count. */
+    suspend fun ensureTrackingStart(todayEpochDay: Long) = context.dataStore.edit {
+        if (it[Keys.trackingStart] == null) it[Keys.trackingStart] = todayEpochDay
+    }
 }

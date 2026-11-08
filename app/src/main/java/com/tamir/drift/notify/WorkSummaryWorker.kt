@@ -43,12 +43,13 @@ class WorkSummaryWorker(appContext: Context, params: WorkerParameters) : Corouti
         val today = LocalDate.now(zone)
         val settings = graph.settings.current()
         val shifts = graph.work.getShifts().toShiftSummaries()
-        val week = GoalCalculator.weekStatus(shifts, today, settings.weeklyIncomeGoalAgorot)
+        val startDate = settings.trackingStartEpochDay?.let { LocalDate.ofEpochDay(it) }
+        val week = GoalCalculator.weekStatus(shifts, today, settings.weeklyIncomeGoalAgorot, startDate)
         val jobs = graph.work.getJobs()
         val mainRate = jobs.firstOrNull { it.isActive }?.hourlyRateAgorot ?: jobs.firstOrNull()?.hourlyRateAgorot ?: 0L
         val month = GoalCalculator.monthStatus(
             shifts, graph.db.transactions().getAll().toSummaries(), YearMonth.from(today), today, zone,
-            settings.monthlySavingGoalAgorot, mainRate,
+            settings.monthlySavingGoalAgorot, mainRate, startDate,
         )
         val ctx = applicationContext
         val track = ctx.getString(if (month.onTrack) R.string.goal_on_track_short else R.string.goal_off_track_short)

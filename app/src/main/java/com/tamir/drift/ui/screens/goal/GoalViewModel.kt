@@ -57,9 +57,10 @@ class GoalViewModel(private val graph: AppGraph) : ViewModel() {
         val txSummaries = txs.toSummaries()
         val mainRate = jobs.firstOrNull { it.isActive }?.hourlyRateAgorot ?: jobs.firstOrNull()?.hourlyRateAgorot ?: 0L
 
-        val status = GoalCalculator.monthStatus(shiftSummaries, txSummaries, month, today, zone, settings.monthlySavingGoalAgorot, mainRate)
-        val week = GoalCalculator.weekStatus(shiftSummaries, today, settings.weeklyIncomeGoalAgorot)
-        val history = GoalCalculator.history(shiftSummaries, txSummaries, month, settings.monthlySavingGoalAgorot, zone)
+        val startDate = settings.trackingStartEpochDay?.let { LocalDate.ofEpochDay(it) }
+        val status = GoalCalculator.monthStatus(shiftSummaries, txSummaries, month, today, zone, settings.monthlySavingGoalAgorot, mainRate, startDate)
+        val week = GoalCalculator.weekStatus(shiftSummaries, today, settings.weeklyIncomeGoalAgorot, startDate)
+        val history = GoalCalculator.history(shiftSummaries, txSummaries, month, settings.monthlySavingGoalAgorot, zone, startDate = startDate)
 
         val savedThisMonth = Money.toShekels(status.savedAgorot)
         val longTerm = goals.map { g ->

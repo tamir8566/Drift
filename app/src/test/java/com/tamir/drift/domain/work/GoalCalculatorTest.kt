@@ -213,3 +213,33 @@ class GoalCalculatorTest {
         assertNull(GoalCalculator.projectedGoalMonth(10_000_00L, 0L, -50_00L, nov))
     }
 }
+
+class GoalCalculatorStartDateTest {
+    private val zone = java.time.ZoneId.of("Asia/Jerusalem")
+
+    @org.junit.Test
+    fun `weeks before the tracking start carry nothing`() {
+        val today = java.time.LocalDate.of(2026, 11, 8)      // Sunday, 2nd week of November
+        val start = java.time.LocalDate.of(2026, 11, 8)
+        val w = GoalCalculator.weekStatus(emptyList(), today, 1_550_00L, start)
+        org.junit.Assert.assertEquals(0L, w.carryInAgorot)
+        org.junit.Assert.assertEquals(1_550_00L, w.goalAgorot)
+    }
+
+    @org.junit.Test
+    fun `month expectation is pro-rated from the tracking start`() {
+        val today = java.time.LocalDate.of(2026, 11, 8)
+        val start = java.time.LocalDate.of(2026, 11, 8)
+        val s = GoalCalculator.monthStatus(emptyList(), emptyList(), java.time.YearMonth.of(2026, 11), today, zone, 6_700_00L, 38_00L, start)
+        org.junit.Assert.assertEquals(23, s.daysInMonth)   // 8..30 November
+        org.junit.Assert.assertEquals(1, s.daysElapsed)
+        org.junit.Assert.assertEquals(Math.round(6_700_00.0 / 23), s.expectedByNowAgorot)
+    }
+
+    @org.junit.Test
+    fun `history drops months before the tracking start`() {
+        val start = java.time.LocalDate.of(2026, 11, 8)
+        val h = GoalCalculator.history(emptyList(), emptyList(), java.time.YearMonth.of(2026, 11), 1L, zone, 6, start)
+        org.junit.Assert.assertEquals(1, h.size)
+    }
+}
