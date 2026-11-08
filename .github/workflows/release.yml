@@ -85,14 +85,6 @@ jobs:
           echo "path=drift-${VERSION_CODE}.apk" >> "$GITHUB_OUTPUT"
           ls -la drift-*.apk
 
-      - name: Upload test reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: unit-test-reports
-          path: app/build/reports/tests/
-          if-no-files-found: ignore
-
       # ------------------------------------------------------------------
       # Supabase Storage: create the public bucket if missing, upload both
       # APK names (upsert) and overwrite manifest.json.
