@@ -1,0 +1,291 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name" translatable="false">Drift</string>
+
+    <!-- Categories -->
+    <string name="cat_groceries">סופר</string>
+    <string name="cat_eating_out">אוכל בחוץ</string>
+    <string name="cat_transport">תחבורה</string>
+    <string name="cat_subscriptions">מנויים</string>
+    <string name="cat_leisure">בילויים</string>
+    <string name="cat_clothing">ביגוד</string>
+    <string name="cat_health">בריאות</string>
+    <string name="cat_home">בית</string>
+    <string name="cat_other">אחר</string>
+
+    <!-- Navigation -->
+    <string name="nav_home">בית</string>
+    <string name="nav_where">לאן הכסף הולך</string>
+    <string name="nav_add">הוספה</string>
+    <string name="nav_budget">תקציב</string>
+    <string name="nav_savings">חיסכון</string>
+    <string name="nav_settings">הגדרות</string>
+    <string name="nav_search">חיפוש</string>
+    <string name="nav_back">חזרה</string>
+
+    <!-- Common -->
+    <string name="shekel">₪</string>
+    <string name="amount_with_shekel">%1$s ₪</string>
+    <string name="save">שמירה</string>
+    <string name="cancel">ביטול</string>
+    <string name="delete">מחיקה</string>
+    <string name="edit">עריכה</string>
+    <string name="ok">אישור</string>
+    <string name="all">הכול</string>
+    <string name="today">היום</string>
+    <string name="yesterday">אתמול</string>
+    <string name="empty_list">אין עדיין הוצאות</string>
+    <string name="out_of">%1$s מתוך %2$s</string>
+    <string name="month_header">%1$s · יום %2$d/%3$d</string>
+
+    <!-- Sources -->
+    <string name="source_gpay">גוגל פיי</string>
+    <string name="source_sms">מסרון מקס</string>
+    <string name="source_manual">ידני</string>
+
+    <!-- Home -->
+    <string name="home_remaining_label">נשאר להוציא החודש</string>
+    <string name="home_over_label">חרגת מהתקציב החודש</string>
+    <string name="home_per_day">ליום</string>
+    <string name="home_this_week">השבוע</string>
+    <string name="home_vs_month">מול %1$s</string>
+    <string name="home_exceeded">חרגת</string>
+    <string name="home_by_category">לפי קטגוריה</string>
+    <string name="home_recent">אחרונות</string>
+    <string name="home_no_data_compare">—</string>
+    <string name="home_good_pace">בקצב טוב</string>
+    <string name="home_too_fast">מהר מדי</string>
+    <string name="shared_tag">עם חברים · שילמתי %1$s</string>
+    <string name="unparsed_title">לא פוענח</string>
+    <string name="unparsed_subtitle">צריך להשלים סכום ובית עסק</string>
+    <string name="no_merchant">בית עסק לא ידוע</string>
+
+    <!-- Where my money goes -->
+    <string name="where_title">לאן הכסף הולך</string>
+    <string name="period_month">חודש</string>
+    <string name="period_3_months">3 חודשים</string>
+    <string name="period_year">שנה</string>
+    <string name="where_breakdown">חלוקה לקטגוריות</string>
+    <string name="where_month_vs_month">חודש מול חודש</string>
+    <string name="where_top_merchants">בתי העסק הגדולים</string>
+    <string name="where_save">איפה אפשר לחסוך</string>
+    <string name="where_subscriptions">מנויים שזוהו</string>
+    <string name="where_no_subscriptions">עדיין לא זוהו מנויים. מנוי מזוהה אחרי שני חיובים חודשיים דומים.</string>
+    <string name="where_no_savings">אין בתי עסק עם 3 קניות ומעלה החודש.</string>
+    <string name="where_no_data">אין נתונים לתקופה הזו</string>
+    <string name="purchases_count">%1$d קניות</string>
+    <string name="save_monthly">%1$s ₪ בחודש · %2$s ₪ בשנה</string>
+    <string name="save_once_a_week">פעם בשבוע במקום: חיסכון של %1$s ₪ בחודש</string>
+    <string name="sub_monthly">%1$s ₪ לחודש · %2$s ₪ לשנה</string>
+    <string name="sub_charges">%1$d חיובים</string>
+    <string name="sub_inactive">לא פעיל</string>
+    <string name="sub_not_subscription">לא מנוי</string>
+    <string name="sub_last_charge">חיוב אחרון: %1$s</string>
+
+    <!-- Budget -->
+    <string name="budget_title">תקציב חודשי</string>
+    <string name="budget_total">תקציב כולל</string>
+    <string name="budget_edit_hint">סכום חודשי בשקלים</string>
+    <string name="budget_change_note">השינוי חל מהחודש הנוכחי ואילך</string>
+    <string name="budget_used">ניצול</string>
+    <string name="budget_daily_pace">קצב יומי</string>
+    <string name="budget_spent">יצא</string>
+    <string name="budget_remaining">נשאר</string>
+    <string name="budget_per_category">תקציב לכל קטגוריה</string>
+    <string name="budget_no_category_budget">ללא תקציב</string>
+    <string name="budget_set_category">תקציב לקטגוריה %1$s</string>
+    <string name="budget_remove">הסרת תקציב</string>
+    <string name="budget_history">היסטוריית עמידה בתקציב</string>
+    <string name="budget_met">עמדת בתקציב</string>
+    <string name="budget_missed">חריגה של %1$s ₪</string>
+    <string name="budget_alerts">התראות</string>
+    <string name="budget_alert_80" formatted="false">התראה ב־80%</string>
+    <string name="budget_alert_100" formatted="false">התראה ב־100%</string>
+    <string name="budget_status_ok">בסדר</string>
+    <string name="budget_status_warning">קרוב לגבול</string>
+    <string name="budget_status_over">חריגה</string>
+    <string name="budget_no_history">אין עדיין היסטוריה</string>
+
+    <!-- Savings -->
+    <string name="savings_title">חיסכון</string>
+    <string name="savings_potential">פוטנציאל חיסכון החודש</string>
+    <string name="savings_potential_desc">תקציב פחות הוצאות</string>
+    <string name="savings_goals">יעדי חיסכון</string>
+    <string name="savings_new_goal">יעד חדש</string>
+    <string name="savings_no_goals">אין עדיין יעדים. הוסיפו יעד עם שם, סכום ותאריך.</string>
+    <string name="savings_needed_per_month">נדרש בחודש</string>
+    <string name="savings_on_track">במסלול</string>
+    <string name="savings_off_track">הקצב לא מספיק</string>
+    <string name="savings_reached">היעד הושג</string>
+    <string name="savings_deposit">הפקדה</string>
+    <string name="savings_deposit_hint">סכום להפקדה</string>
+    <string name="savings_goal_name">שם היעד</string>
+    <string name="savings_goal_amount">סכום היעד</string>
+    <string name="savings_goal_date">תאריך יעד</string>
+    <string name="savings_history">כמה נחסך בעבר</string>
+    <string name="savings_history_desc">תקציב פחות הוצאות בכל חודש</string>
+    <string name="savings_months_left">%1$d חודשים</string>
+    <string name="savings_of_target">מתוך %1$s ₪</string>
+    <string name="savings_until">עד %1$s</string>
+    <string name="date_invalid">תאריך לא תקין (יום.חודש.שנה)</string>
+    <string name="savings_delete_confirm">למחוק את היעד וכל ההפקדות שלו?</string>
+
+    <!-- Add / Detail -->
+    <string name="add_title">הוספה ידנית</string>
+    <string name="add_amount">סכום</string>
+    <string name="add_merchant">בית עסק</string>
+    <string name="add_category">קטגוריה</string>
+    <string name="add_date">תאריך</string>
+    <string name="add_note">הערה</string>
+    <string name="add_shared">עם חברים</string>
+    <string name="add_paid_actually">כמה שילמתי בפועל</string>
+    <string name="add_invalid_amount">צריך סכום גדול מאפס</string>
+    <string name="add_invalid_share">החלק שלי לא יכול לעלות על הסכום המלא</string>
+    <string name="detail_title">פרטי הוצאה</string>
+    <string name="detail_raw_text">הטקסט הגולמי</string>
+    <string name="detail_source">מקור</string>
+    <string name="detail_card">כרטיס</string>
+    <string name="detail_card_last4">מסתיים ב־%1$s</string>
+    <string name="detail_delete_confirm">למחוק את ההוצאה?</string>
+    <string name="detail_not_found">ההוצאה לא נמצאה</string>
+    <string name="detail_full_amount">סכום מלא</string>
+    <string name="detail_complete_unparsed">השלימו סכום ובית עסק כדי שההוצאה תיכנס לחישובים</string>
+
+    <!-- All transactions -->
+    <string name="tx_title">כל ההוצאות</string>
+    <string name="tx_search_hint">חיפוש לפי בית עסק או הערה</string>
+    <string name="tx_filter_category">קטגוריה</string>
+    <string name="tx_filter_month">חודש</string>
+    <string name="tx_all_categories">כל הקטגוריות</string>
+    <string name="tx_all_months">כל החודשים</string>
+    <string name="tx_export_csv">ייצוא CSV</string>
+    <string name="tx_export_title">ייצוא הוצאות</string>
+    <string name="tx_export_choose_month">בחרו חודש לייצוא מתוך הסינון</string>
+    <string name="tx_unparsed_section">לא פוענח</string>
+    <string name="tx_none_found">לא נמצאו הוצאות</string>
+    <string name="tx_count">%1$d הוצאות</string>
+
+    <!-- CSV headers -->
+    <string name="csv_date">תאריך</string>
+    <string name="csv_merchant">בית עסק</string>
+    <string name="csv_category">קטגוריה</string>
+    <string name="csv_amount_full">סכום מלא</string>
+    <string name="csv_amount_mine">החלק שלי</string>
+    <string name="csv_shared">עם חברים</string>
+    <string name="csv_source">מקור</string>
+    <string name="csv_note">הערה</string>
+
+    <!-- Settings -->
+    <string name="settings_title">הגדרות</string>
+    <string name="settings_permissions">הרשאות</string>
+    <string name="settings_notification_access">גישה להתראות</string>
+    <string name="settings_notification_access_desc">נדרש לקליטת התראות גוגל פיי</string>
+    <string name="settings_sms_permission">קריאת מסרונים</string>
+    <string name="settings_sms_permission_desc">נדרש לקליטת מסרונים ממקס</string>
+    <string name="settings_post_notifications">התראות מהאפליקציה</string>
+    <string name="settings_post_notifications_desc">התראות תקציב וסיכום שבועי</string>
+    <string name="settings_install_permission">התקנת עדכונים</string>
+    <string name="settings_install_permission_desc">נדרש להתקנת גרסה חדשה</string>
+    <string name="settings_granted">פעיל</string>
+    <string name="settings_missing">חסר</string>
+    <string name="settings_open">פתיחה</string>
+    <string name="settings_grant">אישור</string>
+    <string name="settings_capture">קליטה</string>
+    <string name="settings_sms_senders">שולחי מסרונים</string>
+    <string name="settings_sms_senders_desc">שמות שולח, מופרדים בפסיק</string>
+    <string name="settings_packages">חבילות התראות</string>
+    <string name="settings_packages_desc">שמות חבילה של גוגל פיי / ארנק גוגל, מופרדים בפסיק</string>
+    <string name="settings_weekly">סיכום שבועי</string>
+    <string name="settings_weekly_desc">יום ושעה להתראת הסיכום</string>
+    <string name="settings_weekly_enabled">סיכום שבועי פעיל</string>
+    <string name="settings_time">שעה</string>
+    <string name="settings_tools">כלים</string>
+    <string name="settings_calibration">כיול פענוח</string>
+    <string name="settings_calibration_desc">הדבקת הודעה אמיתית ולימוד תבנית</string>
+    <string name="settings_debug_log">יומן ניפוי</string>
+    <string name="settings_debug_log_desc">20 הטקסטים הגולמיים האחרונים</string>
+    <string name="settings_all_transactions">כל ההוצאות</string>
+    <string name="settings_update">עדכון</string>
+    <string name="settings_check_update">בדיקת עדכון</string>
+    <string name="settings_version">גרסה %1$s (%2$d)</string>
+    <string name="settings_checking">בודק…</string>
+    <string name="settings_up_to_date">הגרסה עדכנית</string>
+    <string name="settings_update_error">הבדיקה נכשלה: %1$s</string>
+    <string name="settings_learned_rules">כללי סיווג שנלמדו</string>
+    <string name="settings_no_learned_rules">עדיין לא נלמדו כללים. שינוי קטגוריה של הוצאה מלמד כלל.</string>
+    <string name="settings_rule_arrow" translatable="false">←</string>
+
+    <!-- Weekday names -->
+    <string name="day_sunday">ראשון</string>
+    <string name="day_monday">שני</string>
+    <string name="day_tuesday">שלישי</string>
+    <string name="day_wednesday">רביעי</string>
+    <string name="day_thursday">חמישי</string>
+    <string name="day_friday">שישי</string>
+    <string name="day_saturday">שבת</string>
+
+    <!-- Calibration -->
+    <string name="calib_title">כיול פענוח</string>
+    <string name="calib_source">מקור</string>
+    <string name="calib_paste_hint">הדביקו כאן את טקסט ההודעה או ההתראה</string>
+    <string name="calib_example">היי, ביקשת שנעדכן אותך על כל עסקת אינטרנט: היום 05/11 בית עסק\nפז אפליקציית יילו\nחייב את כרטיסך 1234 בסך 216.79 שח\nכדאי לעקוב אחר החיובים כאן:\nhttps://link.max.co.il/5f093cf</string>
+    <string name="calib_parse_result">תוצאת הפענוח</string>
+    <string name="calib_parsed_amount">סכום: %1$s</string>
+    <string name="calib_parsed_merchant">בית עסק: %1$s</string>
+    <string name="calib_parsed_none">לא זוהה</string>
+    <string name="calib_parser">מפענח: %1$s</string>
+    <string name="calib_mark_amount">סימון הסכום</string>
+    <string name="calib_mark_merchant">סימון בית העסק</string>
+    <string name="calib_mark_hint">סמנו את הטקסט בשדה למעלה ואז לחצו</string>
+    <string name="calib_marked_amount">סכום מסומן: %1$s</string>
+    <string name="calib_marked_merchant">בית עסק מסומן: %1$s</string>
+    <string name="calib_save_pattern">שמירת תבנית</string>
+    <string name="calib_saved">התבנית נשמרה</string>
+    <string name="calib_amount_not_number">הסימון של הסכום צריך להכיל מספר</string>
+    <string name="calib_patterns">תבניות שמורות</string>
+    <string name="calib_no_patterns">אין תבניות שמורות</string>
+    <string name="calib_use_example">דוגמה</string>
+    <string name="calib_test_as_tx">בדיקה כהוצאה</string>
+
+    <!-- Debug log -->
+    <string name="debug_title">יומן ניפוי</string>
+    <string name="debug_empty">עדיין לא נקלט כלום. ודאו שההרשאות פעילות.</string>
+    <string name="debug_result">תוצאה: %1$s</string>
+    <string name="debug_linked">הוצאה מספר %1$d</string>
+
+    <!-- Notifications -->
+    <string name="channel_budget">התראות תקציב</string>
+    <string name="channel_budget_desc" formatted="false">מעבר 80% ו־100% מהתקציב</string>
+    <string name="channel_weekly">סיכום שבועי</string>
+    <string name="channel_weekly_desc">סיכום ההוצאות של השבוע</string>
+    <string name="alert80_title_total" formatted="false">הגעת ל־80% מהתקציב</string>
+    <string name="alert80_title_category">הגעת ל־80%% בקטגוריה %1$s</string>
+    <string name="alert80_text">נשארו %1$s ₪ ל־%2$d ימים</string>
+    <string name="alert100_title_total">חרגת מהתקציב</string>
+    <string name="alert100_title_category">חרגת מהתקציב בקטגוריה %1$s</string>
+    <string name="alert100_text">חרגת מהתקציב ב־%1$s ₪</string>
+    <string name="weekly_title">סיכום שבועי</string>
+    <string name="weekly_spent">יצאו השבוע %1$s ₪ ב־%2$d הוצאות</string>
+    <string name="weekly_top_category">הכי הרבה: %1$s (%2$s ₪)</string>
+    <string name="weekly_remaining">נשארו %1$s ₪ מהתקציב (%2$s)</string>
+    <string name="weekly_over">חריגה של %1$s ₪ מהתקציב</string>
+
+    <!-- Update dialog -->
+    <string name="update_title">גרסה חדשה זמינה</string>
+    <string name="update_body">גרסה %1$s מוכנה להתקנה.</string>
+    <string name="update_now">עדכן עכשיו</string>
+    <string name="update_later">אחר כך</string>
+    <string name="update_downloading">מוריד… %1$d%%</string>
+    <string name="update_failed">ההורדה נכשלה: %1$s</string>
+    <string name="update_need_permission">כדי להתקין עדכון צריך לאשר התקנה ממקור לא ידוע</string>
+
+    <!-- Months -->
+    <string-array name="months_full">
+        <item>ינואר</item><item>פברואר</item><item>מרץ</item><item>אפריל</item><item>מאי</item><item>יוני</item>
+        <item>יולי</item><item>אוגוסט</item><item>ספטמבר</item><item>אוקטובר</item><item>נובמבר</item><item>דצמבר</item>
+    </string-array>
+    <string-array name="months_short">
+        <item>ינו׳</item><item>פבר׳</item><item>מרץ</item><item>אפר׳</item><item>מאי</item><item>יוני</item>
+        <item>יולי</item><item>אוג׳</item><item>ספט׳</item><item>אוק׳</item><item>נוב׳</item><item>דצמ׳</item>
+    </string-array>
+</resources>

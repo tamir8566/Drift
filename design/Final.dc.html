@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>דריפט — העיצוב הסופי</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;700;900&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#c5f36f}a:hover{color:#e2ffa8}
+.glass{background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);transition:background .3s ease,border-color .3s ease}
+.glass:hover{background:rgba(255,255,255,0.08);border-color:rgba(197,243,111,0.35)}
+.ln{transition:background .3s ease}.ln:hover{background:rgba(255,255,255,0.04)}
+</style>
+</helmet>
+<div dir="rtl" style="width: 390px; height: 844px; box-sizing: border-box; position: relative; overflow: hidden; font-family: Heebo, system-ui, sans-serif; color: #eef3ec; background: #050b08; direction: rtl">
+  <div aria-hidden="true" style="position: absolute; width: 420px; height: 420px; border-radius: 50%; background: radial-gradient(circle, rgba(197,243,111,0.14) 0%, rgba(197,243,111,0) 70%); top: -200px; right: -120px"></div>
+  <div aria-hidden="true" style="position: absolute; width: 380px; height: 380px; border-radius: 50%; background: radial-gradient(circle, rgba(46,230,197,0.08) 0%, rgba(46,230,197,0) 70%); bottom: -160px; left: -140px"></div>
+
+  <div style="position: relative; box-sizing: border-box; height: 100%; padding: 56px 22px 0 22px; display: flex; flex-direction: column; gap: 18px">
+
+    <div style="display: flex; justify-content: space-between; align-items: center">
+      <span style="font-size: 13px; font-weight: 500; letter-spacing: 2px; color: #8fa89b">נובמבר · יום 8/30</span>
+      <div style="display: flex; gap: 6px">
+        <button aria-label="חיפוש" class="glass" style="width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #eef3ec; padding: 0"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg></button>
+        <button aria-label="הגדרות" class="glass" style="width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #eef3ec; padding: 0"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16"></path><path d="M4 12h16"></path><path d="M4 17h16"></path></svg></button>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 10px">
+      <span style="font-size: 13px; color: #8fa89b; font-weight: 400">נשאר להוציא החודש</span>
+      <div style="display: flex; align-items: baseline; gap: 10px">
+        <span style="font-size: 68px; font-weight: 300; letter-spacing: -3px; line-height: 0.9">2,840</span>
+        <span style="font-size: 24px; font-weight: 300; color: #8fa89b">₪</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 12px; margin-top: 6px">
+        <div style="flex: 1; height: 2px; background: rgba(255,255,255,0.12); position: relative">
+          <div style="position: absolute; right: 0; top: 0; height: 100%; width: 43%; background: {{lime}}"></div>
+          <div style="position: absolute; right: 43%; top: -4px; width: 10px; height: 10px; border-radius: 50%; background: {{lime}}; transform: translateX(50%)"></div>
+        </div>
+        <span style="font-size: 12px; color: #8fa89b; flex-shrink: 0">43% · 2,160 מתוך 5,000</span>
+      </div>
+    </div>
+
+    <div class="glass" style="border-radius: 22px; padding: 14px 16px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0">
+      <div style="display: flex; flex-direction: column; gap: 3px; border-left: 1px solid rgba(255,255,255,0.1); padding-left: 12px">
+        <span style="font-size: 11px; color: #8fa89b">ליום</span>
+        <span style="font-size: 20px; font-weight: 700; color: {{lime}}">129 ₪</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 3px; border-left: 1px solid rgba(255,255,255,0.1); padding: 0 12px">
+        <span style="font-size: 11px; color: #8fa89b">השבוע</span>
+        <span style="font-size: 20px; font-weight: 700">716 ₪</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 3px; padding-right: 12px">
+        <span style="font-size: 11px; color: #8fa89b">מול אוק׳</span>
+        <span style="font-size: 20px; font-weight: 700; color: #2ee6c5">↓ 8%</span>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 2px">
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 0 2px 8px 2px">
+        <span style="font-size: 13px; font-weight: 500; letter-spacing: 1px; color: #8fa89b">לפי קטגוריה</span>
+        <a href="#list" style="font-size: 12px; text-decoration: none">הכול</a>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px"><sc-for list="{{cats}}" as="c" hint-placeholder-count="4"><div class="glass" style="border-radius: 20px; padding: 13px 14px; display: flex; flex-direction: column; gap: 8px; min-width: 0"><div style="display: flex; justify-content: space-between; align-items: center"><span style="font-size: 12px; color: #8fa89b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{c.name}}</span><span style="font-size: 11px; font-weight: 700; color: {{c.tone}}">{{c.pct}}</span></div><span style="font-size: 20px; font-weight: 700; letter-spacing: -0.3px; white-space: nowrap">{{c.amount}}</span><div style="height: 3px; border-radius: 99px; background: rgba(255,255,255,0.1); overflow: hidden"><div style="width: {{c.pct}}; height: 100%; background: {{c.color}}"></div></div></div></sc-for></div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 2px; flex: 1; min-height: 0">
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 0 2px 8px 2px">
+        <span style="font-size: 13px; font-weight: 500; letter-spacing: 1px; color: #8fa89b">אחרונות</span>
+      </div>
+      <div id="list" style="display: flex; flex-direction: column">
+        <sc-for list="{{txs}}" as="t" hint-placeholder-count="3">
+          <div class="ln" style="display: flex; align-items: center; gap: 12px; padding: 10px 2px; border-bottom: 1px solid rgba(255,255,255,0.07); border-radius: 6px">
+            <div style="width: 10px; height: 10px; border-radius: 50%; background: {{t.dot}}; flex-shrink: 0"></div>
+            <div style="display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0">
+              <span style="font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{t.name}}</span>
+              <span style="font-size: 11px; color: #8fa89b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{t.meta}}</span>
+            </div>
+            <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex-shrink: 0">
+              <span style="font-size: 15px; font-weight: 700">{{t.amount}}</span>
+              <sc-if value="{{t.shared}}" hint-placeholder-val="{{false}}">
+                <span style="font-size: 10px; color: {{lime}}; white-space: nowrap">עם חברים · {{t.sharedNote}}</span>
+              </sc-if>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="padding: 4px 0 22px 0; display: flex; justify-content: space-between; align-items: center">
+      <a href="#list" aria-label="בית" style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; color: {{lime}}"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11 12 3l9 8v10a1 1 0 0 1-1 1h-5v-7h-6v7H4a1 1 0 0 1-1-1z"></path></svg></a>
+      <a href="#list" aria-label="גרפים" style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; color: #6f857a"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 20V10"></path><path d="M10 20V4"></path><path d="M16 20v-8"></path><path d="M22 20H2"></path></svg></a>
+      <a href="#list" aria-label="הוספה" class="glass" style="width: 52px; height: 52px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: {{lime}}; border-color: rgba(197,243,111,0.45)"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg></a>
+      <a href="#list" aria-label="מנויים" style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; color: #6f857a"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"></path><path d="M21 3v6h-6"></path></svg></a>
+      <a href="#list" aria-label="תקציב" style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; color: #6f857a"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg></a>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"lime":{"editor":"color","default":"#c5f36f","options":["#c5f36f","#2ee6c5","#ffd166","#e3bf63"]},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const lime = this.props.lime ?? '#c5f36f';
+    return {
+      lime: lime,
+      cats: [
+        { name: 'סופר', amount: '612 ₪', pct: '68%', color: lime, tone: '#8fa89b' },
+        { name: 'אוכל בחוץ', amount: '548 ₪', pct: '91%', color: '#ffb26b', tone: '#ffb26b' },
+        { name: 'תחבורה', amount: '320 ₪', pct: '40%', color: '#2ee6c5', tone: '#8fa89b' },
+        { name: 'מנויים', amount: '164 ₪', pct: '82%', color: lime, tone: '#8fa89b' }
+      ],
+      txs: [
+        { name: 'וולט — פיצה', meta: 'היום · גוגל פיי · אוכל בחוץ', amount: '180 ₪', shared: true, sharedNote: 'שילמתי 60', dot: '#ffb26b' },
+        { name: 'שופרסל בת חפר', meta: 'אתמול · גוגל פיי · סופר', amount: '214 ₪', shared: false, sharedNote: '', dot: lime },
+        { name: 'רב-קו', meta: 'אתמול · מסרון מקס · תחבורה', amount: '120 ₪', shared: false, sharedNote: '', dot: '#2ee6c5' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,175 @@
+name: Build & release Drift
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      VERSION_CODE: ${{ github.run_number }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      # ------------------------------------------------------------------
+      # Signing: decode the keystore from the secret into a temp file. When
+      # the secrets are missing the build falls back to the debug key
+      # (app/build.gradle.kts), so the job still produces an installable APK.
+      # ------------------------------------------------------------------
+      - name: Decode signing keystore
+        id: keystore
+        env:
+          DRIFT_KEYSTORE_B64: ${{ secrets.DRIFT_KEYSTORE_B64 }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DRIFT_KEYSTORE_B64:-}" ]; then
+            echo "::warning::DRIFT_KEYSTORE_B64 is not set – the APK will be signed with the DEBUG key."
+            echo "path=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          KS="$RUNNER_TEMP/drift-release.jks"
+          echo "$DRIFT_KEYSTORE_B64" | tr -d '\n\r ' | base64 -d > "$KS"
+          if [ ! -s "$KS" ]; then
+            echo "::error::Failed to decode DRIFT_KEYSTORE_B64 (empty result). Re-create it with: base64 -w0 drift-release.jks"
+            exit 1
+          fi
+          echo "path=$KS" >> "$GITHUB_OUTPUT"
+          echo "Keystore decoded ($(stat -c%s "$KS") bytes)"
+
+      - name: Unit tests + release APK
+        env:
+          DRIFT_KEYSTORE_PATH: ${{ steps.keystore.outputs.path }}
+          DRIFT_KEYSTORE_PASSWORD: ${{ secrets.DRIFT_KEYSTORE_PASSWORD }}
+          DRIFT_KEY_ALIAS: ${{ secrets.DRIFT_KEY_ALIAS }}
+          DRIFT_KEY_PASSWORD: ${{ secrets.DRIFT_KEY_PASSWORD }}
+        run: ./gradlew --no-daemon test assembleRelease -PversionCode=${VERSION_CODE} --stacktrace
+
+      - name: Locate APK
+        id: apk
+        run: |
+          set -euo pipefail
+          APK=$(ls app/build/outputs/apk/release/*.apk | head -n1)
+          if [ -z "$APK" ]; then echo "::error::No APK produced"; exit 1; fi
+          cp "$APK" "drift-${VERSION_CODE}.apk"
+          cp "$APK" "drift-latest.apk"
+          echo "path=drift-${VERSION_CODE}.apk" >> "$GITHUB_OUTPUT"
+          ls -la drift-*.apk
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-reports
+          path: app/build/reports/tests/
+          if-no-files-found: ignore
+
+      # ------------------------------------------------------------------
+      # Supabase Storage: create the public bucket if missing, upload both
+      # APK names (upsert) and overwrite manifest.json.
+      # ------------------------------------------------------------------
+      - name: Upload to Supabase Storage
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          BUCKET: drift-releases
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_KEY:-}" ]; then
+            echo "::error::SUPABASE_URL / SUPABASE_SERVICE_KEY secrets are missing – cannot publish the update."
+            exit 1
+          fi
+          SUPABASE_URL="${SUPABASE_URL%/}"
+          AUTH=(-H "Authorization: Bearer ${SUPABASE_SERVICE_KEY}" -H "apikey: ${SUPABASE_SERVICE_KEY}")
+
+          # 1) Bucket: create as public when it does not exist.
+          code=$(curl -sS -o /tmp/bucket.json -w '%{http_code}' "${AUTH[@]}" "${SUPABASE_URL}/storage/v1/bucket/${BUCKET}")
+          if [ "$code" = "404" ] || [ "$code" = "400" ]; then
+            echo "Bucket ${BUCKET} not found (HTTP $code) – creating it as public"
+            code=$(curl -sS -o /tmp/bucket-create.json -w '%{http_code}' "${AUTH[@]}" -H "Content-Type: application/json" \
+              -X POST "${SUPABASE_URL}/storage/v1/bucket" \
+              -d "{\"id\":\"${BUCKET}\",\"name\":\"${BUCKET}\",\"public\":true}")
+            if [ "$code" != "200" ] && [ "$code" != "201" ]; then
+              echo "::error::Creating bucket failed (HTTP $code): $(cat /tmp/bucket-create.json)"; exit 1
+            fi
+          elif [ "$code" != "200" ]; then
+            echo "::error::Checking bucket failed (HTTP $code): $(cat /tmp/bucket.json)"; exit 1
+          else
+            # Make sure it is public (the app downloads without credentials).
+            curl -sS -o /dev/null "${AUTH[@]}" -H "Content-Type: application/json" -X PUT \
+              "${SUPABASE_URL}/storage/v1/bucket/${BUCKET}" -d '{"public":true}' || true
+          fi
+
+          upload() { # upload <local file> <object name> <content-type>
+            local f="$1" name="$2" ct="$3"
+            local code
+            code=$(curl -sS -o /tmp/upload.json -w '%{http_code}' "${AUTH[@]}" \
+              -H "Content-Type: ${ct}" -H "x-upsert: true" -H "Cache-Control: no-cache" \
+              -X POST "${SUPABASE_URL}/storage/v1/object/${BUCKET}/${name}" --data-binary "@${f}")
+            if [ "$code" != "200" ] && [ "$code" != "201" ]; then
+              echo "::error::Upload of ${name} failed (HTTP $code): $(cat /tmp/upload.json)"; exit 1
+            fi
+            echo "Uploaded ${name} (HTTP $code)"
+          }
+
+          # 2) APKs
+          upload "drift-${VERSION_CODE}.apk" "drift-${VERSION_CODE}.apk" "application/vnd.android.package-archive"
+          upload "drift-latest.apk" "drift-latest.apk" "application/vnd.android.package-archive"
+
+          # 3) Manifest
+          APK_URL="${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/drift-${VERSION_CODE}.apk"
+          NOTES=$(git log -1 --pretty=%s | head -c 200 | sed 's/"/\\"/g')
+          cat > manifest.json <<EOF
+          {
+            "versionCode": ${VERSION_CODE},
+            "versionName": "1.0.${VERSION_CODE}",
+            "apkUrl": "${APK_URL}",
+            "notes": "${NOTES}"
+          }
+          EOF
+          cat manifest.json
+          upload "manifest.json" "manifest.json" "application/json"
+
+          # 4) Verify the public manifest is reachable.
+          code=$(curl -sS -o /tmp/manifest-check.json -w '%{http_code}' "${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/manifest.json?t=$(date +%s)")
+          if [ "$code" != "200" ]; then
+            echo "::error::Public manifest not reachable (HTTP $code). Is the bucket public?"; exit 1
+          fi
+          echo "Public manifest OK: $(cat /tmp/manifest-check.json)"
+
+      - name: GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.VERSION_CODE }}
+          name: Drift v${{ env.VERSION_CODE }}
+          body: |
+            versionCode ${{ env.VERSION_CODE }} · ${{ github.sha }}
+            ${{ github.event.head_commit.message }}
+          files: |
+            drift-${{ env.VERSION_CODE }}.apk
+            manifest.json
