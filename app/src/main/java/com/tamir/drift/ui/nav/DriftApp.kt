@@ -3,13 +3,35 @@ package com.tamir.drift.ui.nav
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -18,25 +40,32 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.tamir.drift.R
 import com.tamir.drift.ui.components.BottomTab
 import com.tamir.drift.ui.components.DriftBackdrop
 import com.tamir.drift.ui.components.DriftBottomBar
+import com.tamir.drift.ui.components.DriftIcons
+import com.tamir.drift.ui.components.GlassCard
 import com.tamir.drift.ui.screens.add.ManualAddScreen
 import com.tamir.drift.ui.screens.budget.BudgetScreen
 import com.tamir.drift.ui.screens.detail.TransactionDetailScreen
+import com.tamir.drift.ui.screens.goal.GoalScreen
 import com.tamir.drift.ui.screens.home.HomeScreen
-import com.tamir.drift.ui.screens.savings.SavingsScreen
 import com.tamir.drift.ui.screens.settings.CalibrationScreen
 import com.tamir.drift.ui.screens.settings.DebugLogScreen
 import com.tamir.drift.ui.screens.settings.SettingsScreen
 import com.tamir.drift.ui.screens.transactions.AllTransactionsScreen
 import com.tamir.drift.ui.screens.where.WhereScreen
+import com.tamir.drift.ui.screens.work.AddShiftScreen
+import com.tamir.drift.ui.screens.work.WorkScreen
+import com.tamir.drift.ui.theme.DriftColors
+import com.tamir.drift.ui.theme.DriftType
 
 private val topLevel = mapOf(
     Routes.HOME to BottomTab.HOME,
     Routes.WHERE to BottomTab.WHERE,
-    Routes.BUDGET to BottomTab.BUDGET,
-    Routes.SAVINGS to BottomTab.SAVINGS,
+    Routes.WORK to BottomTab.WORK,
+    Routes.GOAL to BottomTab.GOAL,
 )
 
 @Composable
@@ -46,6 +75,7 @@ fun DriftApp() {
     val route = backStack?.destination?.route
     val baseRoute = route?.substringBefore('?')
     val activeTab = topLevel[baseRoute]
+    var showAddMenu by remember { mutableStateOf(false) }
 
     DriftBackdrop {
         Column(Modifier.fillMaxSize()) {
@@ -56,11 +86,68 @@ fun DriftApp() {
                 DriftBottomBar(
                     active = activeTab,
                     onTab = { tab -> nav.navigateTopLevel(tab) },
-                    onAdd = { nav.navigate(Routes.ADD) },
+                    onAdd = { showAddMenu = true },
                     modifier = Modifier.navigationBarsPadding(),
                 )
             }
         }
+        if (showAddMenu && activeTab != null) {
+            AddMenu(
+                onDismiss = { showAddMenu = false },
+                onExpense = { showAddMenu = false; nav.navigate(Routes.ADD) },
+                onShift = { showAddMenu = false; nav.navigate(Routes.shift()) },
+            )
+        }
+    }
+}
+
+/**
+ * PRD: the plus opens a small menu — "הוצאה" / "משמרת". A glass sheet anchored above the
+ * bottom bar over a light scrim; tapping outside closes it.
+ */
+@Composable
+private fun AddMenu(onDismiss: () -> Unit, onExpense: () -> Unit, onShift: () -> Unit) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.55f))
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onDismiss),
+        contentAlignment = Alignment.BottomCenter,
+    ) {
+        GlassCard(
+            Modifier
+                .navigationBarsPadding()
+                .padding(start = 22.dp, end = 22.dp, bottom = 96.dp)
+                .fillMaxWidth()
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = {}),
+            radius = 22.dp,
+        ) {
+            Column(Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
+                AddMenuRow(DriftIcons.Plus, stringResource(R.string.add_menu_expense), DriftColors.Orange, onExpense)
+                AddMenuRow(DriftIcons.Work, stringResource(R.string.add_menu_shift), DriftColors.Lime, onShift)
+            }
+        }
+    }
+}
+
+@Composable
+private fun AddMenuRow(icon: ImageVector, text: String, color: Color, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Box(
+            Modifier.size(36.dp).clip(CircleShape).background(color.copy(alpha = 0.12f), CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(icon, text, tint = color, modifier = Modifier.size(18.dp))
+        }
+        Text(text, style = DriftType.RowTitle, color = DriftColors.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -68,8 +155,8 @@ private fun NavHostController.navigateTopLevel(tab: BottomTab) {
     val target = when (tab) {
         BottomTab.HOME -> Routes.HOME
         BottomTab.WHERE -> Routes.WHERE
-        BottomTab.BUDGET -> Routes.BUDGET
-        BottomTab.SAVINGS -> Routes.SAVINGS
+        BottomTab.WORK -> Routes.WORK
+        BottomTab.GOAL -> Routes.GOAL
     }
     navigate(target) {
         popUpTo(graph.findStartDestination().id) { saveState = true }
@@ -96,6 +183,8 @@ private fun DriftNavHost(nav: NavHostController) {
                 onOpenAll = { nav.navigate(Routes.transactions()) },
                 onOpenSettings = { nav.navigate(Routes.SETTINGS) },
                 onOpenSearch = { nav.navigate(Routes.transactions()) },
+                onOpenBudget = { nav.navigate(Routes.BUDGET) },
+                onOpenGoal = { nav.navigateTopLevel(BottomTab.GOAL) },
             )
         }
         composable(
@@ -108,9 +197,22 @@ private fun DriftNavHost(nav: NavHostController) {
                 onOpenTransaction = { nav.navigate(Routes.detail(it)) },
             )
         }
-        composable(Routes.BUDGET) { BudgetScreen() }
-        composable(Routes.SAVINGS) { SavingsScreen() }
+        composable(Routes.BUDGET) { BudgetScreen(onBack = { nav.popBackStack() }) }
+        composable(Routes.WORK) {
+            WorkScreen(
+                onAddShift = { nav.navigate(Routes.shift()) },
+                onEditShift = { nav.navigate(Routes.shift(it)) },
+            )
+        }
+        composable(Routes.GOAL) { GoalScreen() }
         composable(Routes.ADD) { ManualAddScreen(onDone = { nav.popBackStack() }) }
+        composable(
+            "${Routes.SHIFT}?${Routes.ARG_ID}={${Routes.ARG_ID}}",
+            arguments = listOf(navArgument(Routes.ARG_ID) { type = NavType.LongType; defaultValue = -1L }),
+        ) { entry ->
+            val id = entry.arguments?.getLong(Routes.ARG_ID) ?: -1L
+            AddShiftScreen(shiftId = id.takeIf { it >= 0L }, onDone = { nav.popBackStack() })
+        }
         composable(
             Routes.DETAIL,
             arguments = listOf(navArgument(Routes.ARG_ID) { type = NavType.LongType }),
@@ -137,6 +239,7 @@ private fun DriftNavHost(nav: NavHostController) {
                 onOpenCalibration = { nav.navigate(Routes.CALIBRATION) },
                 onOpenDebug = { nav.navigate(Routes.DEBUG) },
                 onOpenAll = { nav.navigate(Routes.transactions()) },
+                onOpenBudget = { nav.navigate(Routes.BUDGET) },
             )
         }
         composable(Routes.CALIBRATION) { CalibrationScreen(onBack = { nav.popBackStack() }) }

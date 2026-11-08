@@ -4,9 +4,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.tamir.drift.data.db.CategoryEntity
 import com.tamir.drift.data.db.TransactionEntity
+import com.tamir.drift.data.repo.Money
+import com.tamir.drift.data.repo.toShiftSummaries
 import com.tamir.drift.di.AppGraph
 import com.tamir.drift.domain.budget.CategorySpend
 import com.tamir.drift.domain.budget.MonthSummary
+import com.tamir.drift.domain.work.GoalCalculator
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -22,6 +25,10 @@ data class HomeUiState(
     val categories: Map<String, CategoryEntity> = emptyMap(),
     val recent: List<TransactionEntity> = emptyList(),
     val unparsedCount: Int = 0,
+    /** PRD 8 Nov: shifts income this month (shekels). */
+    val earnedThisMonth: Double = 0.0,
+    /** PRD 8 Nov: income − my share of expenses (shekels); may be negative. */
+    val savedThisMonth: Double = 0.0,
 )
 
 class HomeViewModel(graph: AppGraph) : ViewModel() {
@@ -30,10 +37,13 @@ class HomeViewModel(graph: AppGraph) : ViewModel() {
         graph.transactions.all,
         graph.categories.categories,
         graph.budgets.all,
-    ) { txs, cats, budgets ->
+        graph.work.shifts,
+    ) { txs, cats, budgets, shifts ->
         val month = YearMonth.now()
         val summary = graph.monthSummary.build(txs, cats, budgets, month)
         val top = summary.categories.filter { it.spent > 0 }.take(4).ifEmpty { summary.categories.take(4) }
+        // Budget math is untouched; the earned/saved row is purely additive.
+        val earned = Money.toShekels(GoalCalculator.earnedIn(shifts.toShiftSummaries(), month))
         HomeUiState(
             loading = false,
             month = month,
@@ -42,6 +52,8 @@ class HomeViewModel(graph: AppGraph) : ViewModel() {
             categories = cats.associateBy { it.id },
             recent = txs.filter { !it.isUnparsed }.sortedByDescending { it.timestamp }.take(6),
             unparsedCount = txs.count { it.isUnparsed },
+            earnedThisMonth = earned,
+            savedThisMonth = earned - summary.spent,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState())
 }

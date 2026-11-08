@@ -8,6 +8,7 @@ import com.tamir.drift.data.repo.CategoryRepository
 import com.tamir.drift.data.repo.MonthSummaryUseCase
 import com.tamir.drift.data.repo.SavingsRepository
 import com.tamir.drift.data.repo.TransactionRepository
+import com.tamir.drift.data.repo.WorkRepository
 import com.tamir.drift.data.settings.SettingsStore
 import com.tamir.drift.notify.BudgetAlertChecker
 import com.tamir.drift.notify.Notifier
@@ -22,6 +23,7 @@ class AppGraph private constructor(val appContext: Context) {
     val transactions: TransactionRepository by lazy { TransactionRepository(db, categories) }
     val budgets: BudgetRepository by lazy { BudgetRepository(db) }
     val savings: SavingsRepository by lazy { SavingsRepository(db) }
+    val work: WorkRepository by lazy { WorkRepository(appContext, db) }
     val monthSummary: MonthSummaryUseCase by lazy { MonthSummaryUseCase() }
     val notifier: Notifier by lazy { Notifier(appContext) }
     val alertChecker: BudgetAlertChecker by lazy { BudgetAlertChecker(appContext, db, settings, notifier, monthSummary) }

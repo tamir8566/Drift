@@ -24,12 +24,12 @@ import androidx.compose.ui.unit.dp
 import com.tamir.drift.R
 import com.tamir.drift.ui.theme.DriftColors
 
-enum class BottomTab { HOME, WHERE, BUDGET, SAVINGS }
+enum class BottomTab { HOME, WHERE, WORK, GOAL }
 
 /**
  * Bottom bar from the mockup: line icons only, no background; active in lime, others dim;
  * the plus in the middle is a 52dp glass circle with a lime 45% border.
- * Order (RTL, start→end): home · where · + · budget · savings.
+ * Order (RTL, start→end): home · where · + · work · goal (PRD 8 Nov).
  */
 @Composable
 fun DriftBottomBar(active: BottomTab?, onTab: (BottomTab) -> Unit, onAdd: () -> Unit, modifier: Modifier = Modifier) {
@@ -51,8 +51,8 @@ fun DriftBottomBar(active: BottomTab?, onTab: (BottomTab) -> Unit, onAdd: () -> 
         ) {
             Icon(DriftIcons.Plus, stringResource(R.string.nav_add), tint = DriftColors.Lime, modifier = Modifier.size(22.dp))
         }
-        BarIcon(DriftIcons.Budget, stringResource(R.string.nav_budget), active == BottomTab.BUDGET) { onTab(BottomTab.BUDGET) }
-        BarIcon(DriftIcons.Savings, stringResource(R.string.nav_savings), active == BottomTab.SAVINGS) { onTab(BottomTab.SAVINGS) }
+        BarIcon(DriftIcons.Work, stringResource(R.string.nav_work), active == BottomTab.WORK) { onTab(BottomTab.WORK) }
+        BarIcon(DriftIcons.Goal, stringResource(R.string.nav_goal), active == BottomTab.GOAL) { onTab(BottomTab.GOAL) }
     }
 }
 

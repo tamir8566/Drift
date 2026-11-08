@@ -17,8 +17,6 @@
     <string name="nav_home">בית</string>
     <string name="nav_where">לאן הכסף הולך</string>
     <string name="nav_add">הוספה</string>
-    <string name="nav_budget">תקציב</string>
-    <string name="nav_savings">חיסכון</string>
     <string name="nav_settings">הגדרות</string>
     <string name="nav_search">חיפוש</string>
     <string name="nav_back">חזרה</string>
@@ -107,10 +105,6 @@
     <string name="budget_no_history">אין עדיין היסטוריה</string>
 
     <!-- Savings -->
-    <string name="savings_title">חיסכון</string>
-    <string name="savings_potential">פוטנציאל חיסכון החודש</string>
-    <string name="savings_potential_desc">תקציב פחות הוצאות</string>
-    <string name="savings_goals">יעדי חיסכון</string>
     <string name="savings_new_goal">יעד חדש</string>
     <string name="savings_no_goals">אין עדיין יעדים. הוסיפו יעד עם שם, סכום ותאריך.</string>
     <string name="savings_needed_per_month">נדרש בחודש</string>
@@ -122,8 +116,6 @@
     <string name="savings_goal_name">שם היעד</string>
     <string name="savings_goal_amount">סכום היעד</string>
     <string name="savings_goal_date">תאריך יעד</string>
-    <string name="savings_history">כמה נחסך בעבר</string>
-    <string name="savings_history_desc">תקציב פחות הוצאות בכל חודש</string>
     <string name="savings_months_left">%1$d חודשים</string>
     <string name="savings_of_target">מתוך %1$s ₪</string>
     <string name="savings_until">עד %1$s</string>
@@ -278,6 +270,102 @@
     <string name="update_downloading">מוריד… %1$d%%</string>
     <string name="update_failed">ההורדה נכשלה: %1$s</string>
     <string name="update_need_permission">כדי להתקין עדכון צריך לאשר התקנה ממקור לא ידוע</string>
+
+    <!-- Work & goal (PRD addition 8 Nov) -->
+    <string name="nav_work">עבודה</string>
+    <string name="nav_goal">יעד</string>
+    <string name="add_menu_expense">הוצאה</string>
+    <string name="add_menu_shift">משמרת</string>
+    <string name="job_seed_name">אדם מילא</string>
+
+    <string name="work_title">עבודה</string>
+    <string name="work_earned_month">הרווחת החודש</string>
+    <string name="work_this_week">השבוע</string>
+    <string name="work_hours_month">שעות החודש</string>
+    <string name="work_hours_value">%1$s שע׳</string>
+    <string name="work_calendar_hint">לחיצה על יום מסמנת או מבטלת יום עבודה מתוכנן</string>
+    <string name="work_legend_worked">עבדתי</string>
+    <string name="work_legend_planned">מתוכנן</string>
+    <string name="work_prev_month">חודש קודם</string>
+    <string name="work_next_month">חודש הבא</string>
+    <string name="work_by_job">לפי עבודה</string>
+    <string name="work_job_card_meta">%1$s שע׳ · השבוע %2$s ₪</string>
+    <string name="work_no_jobs">אין עדיין עבודות</string>
+    <string name="work_recent_shifts">משמרות אחרונות</string>
+    <string name="work_no_shifts">אין עדיין משמרות. מוסיפים משמרת מכפתור הפלוס.</string>
+    <string name="work_shabbat_tag">שבת</string>
+    <string name="work_manage_jobs">ניהול עבודות</string>
+    <string name="work_add_job">עבודה חדשה</string>
+    <string name="work_job_rate">%1$s ₪ לשעה</string>
+    <string name="work_job_shabbat">שבת ×%1$s</string>
+    <string name="work_job_inactive">לא פעילה</string>
+    <string name="work_job_name">שם העבודה</string>
+    <string name="work_job_hourly_rate">תעריף לשעה בשקלים</string>
+    <string name="work_job_multiplier">מכפיל שבת (למשל 1.5)</string>
+    <string name="work_job_deactivate">השבתה</string>
+    <string name="work_job_activate">הפעלה</string>
+    <string name="work_delete_shift_confirm">למחוק את המשמרת?</string>
+
+    <string name="shift_title">משמרת חדשה</string>
+    <string name="shift_edit_title">עריכת משמרת</string>
+    <string name="shift_job">עבודה</string>
+    <string name="shift_date">תאריך</string>
+    <string name="shift_mode_times">כניסה ויציאה</string>
+    <string name="shift_mode_hours">מספר שעות</string>
+    <string name="shift_start">כניסה</string>
+    <string name="shift_end">יציאה</string>
+    <string name="shift_hours">שעות</string>
+    <string name="shift_shabbat_rate">תעריף שבת</string>
+    <string name="shift_amount">סכום</string>
+    <string name="shift_amount_formula">%1$s שע׳ × %2$s ₪</string>
+    <string name="shift_amount_formula_shabbat">%1$s שע׳ × %2$s ₪ × %3$s</string>
+    <string name="shift_amount_manual">סכום ידני</string>
+    <string name="shift_amount_reset">חזרה לסכום המחושב</string>
+    <string name="shift_note">הערה</string>
+    <string name="shift_invalid_time">שעה לא תקינה (שעה:דקות)</string>
+    <string name="shift_invalid_hours">צריך מספר שעות גדול מאפס</string>
+    <string name="shift_no_jobs">אין עבודה פעילה. מוסיפים עבודה במסך עבודה.</string>
+    <string name="shift_not_found">המשמרת לא נמצאה</string>
+
+    <string name="goal_title">יעד</string>
+    <string name="goal_saved_month">נחסך החודש</string>
+    <string name="goal_on_track">בכיוון</string>
+    <string name="goal_off_track">לא בכיוון</string>
+    <string name="goal_on_track_short">במסלול</string>
+    <string name="goal_off_track_short">לא במסלול</string>
+    <string name="goal_shortfall">חסרים %1$s ₪ · עוד כ־%2$d שעות עבודה</string>
+    <string name="goal_met">היעד החודשי הושג</string>
+    <string name="goal_earned_spent">הכנסות %1$s ₪ − הוצאות %2$s ₪</string>
+    <string name="goal_week_income">הכנסת השבוע</string>
+    <string name="goal_week_surplus">אתה בפלוס %1$s ₪ — שבוע הבא אפשר להרוויח %1$s ₪ פחות</string>
+    <string name="goal_week_deficit">חסרים %1$s ₪ — שבוע הבא צריך %1$s ₪ יותר</string>
+    <string name="goal_week_even">בדיוק ביעד השבועי</string>
+    <string name="goal_week_carry_plus">נגרר משבועות קודמים החודש: +%1$s ₪</string>
+    <string name="goal_week_carry_minus">נגרר משבועות קודמים החודש: −%1$s ₪</string>
+    <string name="goal_week_reset_note">האיזון מתאפס בתחילת כל חודש</string>
+    <string name="goal_recommendation">כדי לעמוד ביעד החודש: עוד %1$d שעות עבודה, או לצמצם הוצאות ב־%2$s ₪</string>
+    <string name="goal_targets">היעדים שלי</string>
+    <string name="goal_target_monthly">יעד חיסכון חודשי</string>
+    <string name="goal_target_weekly">יעד הכנסה שבועי</string>
+    <string name="goal_step_decrease">הפחתה</string>
+    <string name="goal_step_increase">הוספה</string>
+    <string name="goal_edit_amount_hint">סכום בשקלים</string>
+    <string name="goal_history">6 חודשים אחרונים</string>
+    <string name="goal_history_desc">נחסך בכל חודש מול היעד · ליים: עמדת ביעד · כתום: לא</string>
+    <string name="goal_long_term">יעדי חיסכון ארוכי טווח</string>
+    <string name="goal_projection">בקצב של החודש תגיע ליעד ב%1$s</string>
+    <string name="goal_projection_none">בקצב של החודש לא מתקרבים ליעד</string>
+    <string name="home_earned_saved">הרווחת החודש %1$s ₪ · נחסכו %2$s ₪</string>
+    <string name="settings_work_summary">סיכום שבוע עבודה (שבת 20:00)</string>
+    <string name="settings_work_summary_desc">הרווחת X מתוך Y · במסלול או לא</string>
+    <string name="settings_budget_screen">תקציב חודשי</string>
+    <string name="settings_budget_screen_desc">תקציב כולל, תקציב לקטגוריה והתראות</string>
+    <string name="work_summary_title">סיכום שבוע</string>
+    <string name="work_summary_text">הרווחת %1$s מתוך %2$s ₪ · %3$s</string>
+
+    <string-array name="day_initials">
+        <item>א</item><item>ב</item><item>ג</item><item>ד</item><item>ה</item><item>ו</item><item>ש</item>
+    </string-array>
 
     <!-- Months -->
     <string-array name="months_full">

@@ -177,6 +177,69 @@ interface SavingsDao {
 }
 
 @Dao
+interface JobDao {
+    @Query("SELECT * FROM jobs ORDER BY isActive DESC, createdAt")
+    fun observeAll(): Flow<List<JobEntity>>
+
+    @Query("SELECT * FROM jobs ORDER BY isActive DESC, createdAt")
+    suspend fun getAll(): List<JobEntity>
+
+    @Query("SELECT * FROM jobs WHERE id = :id")
+    suspend fun getById(id: Long): JobEntity?
+
+    @Query("SELECT COUNT(*) FROM jobs")
+    suspend fun count(): Int
+
+    @Insert
+    suspend fun insert(j: JobEntity): Long
+
+    @Update
+    suspend fun update(j: JobEntity)
+
+    @Query("UPDATE jobs SET isActive = :active WHERE id = :id")
+    suspend fun setActive(id: Long, active: Boolean)
+}
+
+@Dao
+interface ShiftDao {
+    @Query("SELECT * FROM shifts ORDER BY date DESC, createdAt DESC")
+    fun observeAll(): Flow<List<ShiftEntity>>
+
+    @Query("SELECT * FROM shifts ORDER BY date DESC, createdAt DESC")
+    suspend fun getAll(): List<ShiftEntity>
+
+    @Query("SELECT * FROM shifts WHERE date >= :fromDay AND date <= :toDay ORDER BY date DESC, createdAt DESC")
+    suspend fun getBetween(fromDay: Long, toDay: Long): List<ShiftEntity>
+
+    @Query("SELECT * FROM shifts WHERE id = :id")
+    suspend fun getById(id: Long): ShiftEntity?
+
+    @Insert
+    suspend fun insert(s: ShiftEntity): Long
+
+    @Update
+    suspend fun update(s: ShiftEntity)
+
+    @Query("DELETE FROM shifts WHERE id = :id")
+    suspend fun deleteById(id: Long)
+}
+
+@Dao
+interface PlannedDayDao {
+    @Query("SELECT * FROM planned_days ORDER BY date")
+    fun observeAll(): Flow<List<PlannedDayEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(p: PlannedDayEntity)
+
+    @Query("DELETE FROM planned_days WHERE date = :date")
+    suspend fun delete(date: Long)
+
+    @Query("SELECT COUNT(*) FROM planned_days WHERE date = :date")
+    suspend fun countAt(date: Long): Int
+}
+
+@Dao
 interface AlertSentDao {
     @Query("SELECT `key` FROM alerts_sent WHERE `key` LIKE :monthPrefix || '%'")
     suspend fun keysForMonth(monthPrefix: String): List<String>

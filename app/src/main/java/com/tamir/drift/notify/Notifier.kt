@@ -37,6 +37,9 @@ class Notifier(private val context: Context) {
 
     fun notifyWeekly(title: String, text: String) = post(CHANNEL_WEEKLY, ID_WEEKLY, title, text)
 
+    /** Saturday 20:00 work summary (same low-importance channel as the weekly summary). */
+    fun notifyWorkSummary(title: String, text: String) = post(CHANNEL_WEEKLY, ID_WORK_WEEKLY, title, text)
+
     private fun post(channel: String, id: Int, title: String, text: String) {
         if (!canPost()) return
         val open = PendingIntent.getActivity(
@@ -58,6 +61,7 @@ class Notifier(private val context: Context) {
         const val CHANNEL_BUDGET = "budget_alerts"
         const val CHANNEL_WEEKLY = "weekly_summary"
         const val ID_WEEKLY = 1001
+        const val ID_WORK_WEEKLY = 1002
         const val ID_BUDGET_BASE = 2000
     }
 }

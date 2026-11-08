@@ -50,6 +50,7 @@ import com.tamir.drift.R
 import com.tamir.drift.data.db.Origin
 import com.tamir.drift.data.settings.Settings
 import com.tamir.drift.notify.WeeklySummaryScheduler
+import com.tamir.drift.notify.WorkSummaryScheduler
 import com.tamir.drift.ui.LocalAppGraph
 import com.tamir.drift.ui.components.ChoiceRow
 import com.tamir.drift.ui.components.DriftDialog
@@ -70,7 +71,7 @@ import java.time.DayOfWeek
 
 /** PRD "הגדרות". */
 @Composable
-fun SettingsScreen(onBack: () -> Unit, onOpenCalibration: () -> Unit, onOpenDebug: () -> Unit, onOpenAll: () -> Unit) {
+fun SettingsScreen(onBack: () -> Unit, onOpenCalibration: () -> Unit, onOpenDebug: () -> Unit, onOpenAll: () -> Unit, onOpenBudget: () -> Unit) {
     val graph = LocalAppGraph.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -167,6 +168,17 @@ fun SettingsScreen(onBack: () -> Unit, onOpenCalibration: () -> Unit, onOpenDebu
                         val s = settings
                         val value = if (s != null) "${Fmt.dayName(context, DayOfWeek.of(s.weeklySummaryDay))} · ${Fmt.clock(s.weeklySummaryHour, s.weeklySummaryMinute)}" else ""
                         NavRow(stringResource(R.string.settings_weekly_desc), value) { editWeekly = true }
+                        HairlineDivider()
+                        SwitchRow(
+                            stringResource(R.string.settings_work_summary), settings?.workSummaryEnabled ?: true,
+                            { v ->
+                                scope.launch {
+                                    graph.settings.setWorkSummaryEnabled(v)
+                                    WorkSummaryScheduler.schedule(context)
+                                }
+                            },
+                            subtitle = stringResource(R.string.settings_work_summary_desc),
+                        )
                     }
                 }
             }
@@ -178,6 +190,8 @@ fun SettingsScreen(onBack: () -> Unit, onOpenCalibration: () -> Unit, onOpenDebu
                 SectionHeader(stringResource(R.string.settings_tools))
                 GlassCard(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
+                        NavRow(stringResource(R.string.settings_budget_screen), stringResource(R.string.settings_budget_screen_desc), onOpenBudget)
+                        HairlineDivider()
                         NavRow(stringResource(R.string.settings_calibration), stringResource(R.string.settings_calibration_desc), onOpenCalibration)
                         HairlineDivider()
                         NavRow(stringResource(R.string.settings_debug_log), stringResource(R.string.settings_debug_log_desc), onOpenDebug)

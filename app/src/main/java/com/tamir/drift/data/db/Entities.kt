@@ -113,6 +113,48 @@ data class AlertSentEntity(
     val sentAt: Long,
 )
 
+/** PRD "עבודות ומשמרות": a job with its hourly rate. */
+@Entity(tableName = "jobs")
+data class JobEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    /** Agorot per hour. */
+    val hourlyRateAgorot: Long,
+    /** Factor applied when a shift is marked "תעריף שבת" (default 1.5). */
+    val shabbatMultiplier: Double = 1.5,
+    /** ARGB color from the palette. */
+    val color: Long,
+    val isActive: Boolean = true,
+    val createdAt: Long = System.currentTimeMillis(),
+)
+
+/** One shift. The day is an epoch day (LocalDate.toEpochDay()); times are minutes from midnight. */
+@Entity(tableName = "shifts", indices = [Index("jobId"), Index("date")])
+data class ShiftEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val jobId: Long,
+    /** Epoch day. */
+    val date: Long,
+    /** Minutes from midnight, when the shift was entered as start/end. */
+    val startTime: Int? = null,
+    val endTime: Int? = null,
+    val hours: Double,
+    val isShabbatRate: Boolean = false,
+    /** Agorot; computed unless [manualAmount]. */
+    val amountAgorot: Long,
+    val manualAmount: Boolean = false,
+    val note: String? = null,
+    val createdAt: Long = System.currentTimeMillis(),
+)
+
+/** A day the user marked in advance as a working day (thin ring in the calendar). */
+@Entity(tableName = "planned_days")
+data class PlannedDayEntity(
+    /** Epoch day. */
+    @PrimaryKey val date: Long,
+    val jobId: Long? = null,
+)
+
 object Origin {
     const val BUILTIN = "BUILTIN"
     const val LEARNED = "LEARNED"

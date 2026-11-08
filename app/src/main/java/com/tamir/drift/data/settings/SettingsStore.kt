@@ -31,10 +31,18 @@ data class Settings(
     val lastUpdateCheck: Long,
     /** Merchants the user marked as "not a subscription". */
     val excludedSubscriptions: Set<String>,
+    /** PRD "מסך יעד": monthly saving goal (agorot), user-set. */
+    val monthlySavingGoalAgorot: Long,
+    /** PRD "מסך יעד": fixed weekly income goal (agorot), user-set. */
+    val weeklyIncomeGoalAgorot: Long,
+    /** Saturday 20:00 work summary ("סיכום שבוע: הרווחת X מתוך Y"). */
+    val workSummaryEnabled: Boolean,
 ) {
     companion object {
         val DEFAULT_SMS_SENDERS = setOf("max", "MAX", "Max")
         val DEFAULT_PACKAGES = setOf("com.google.android.apps.walletnfcrel", "com.google.android.apps.nbu.paisa.user")
+        const val DEFAULT_MONTHLY_SAVING_GOAL = 2_000_00L
+        const val DEFAULT_WEEKLY_INCOME_GOAL = 1_200_00L
     }
 }
 
@@ -53,6 +61,9 @@ class SettingsStore(private val context: Context) {
         val manifestUrl = stringPreferencesKey("update_manifest_url")
         val lastUpdateCheck = longPreferencesKey("last_update_check")
         val excludedSubs = stringSetPreferencesKey("excluded_subscriptions")
+        val monthlySavingGoal = longPreferencesKey("monthly_saving_goal")
+        val weeklyIncomeGoal = longPreferencesKey("weekly_income_goal")
+        val workSummaryEnabled = booleanPreferencesKey("work_summary_enabled")
     }
 
     val settings: Flow<Settings> = context.dataStore.data.map { p ->
@@ -68,6 +79,9 @@ class SettingsStore(private val context: Context) {
             updateManifestUrl = p[Keys.manifestUrl] ?: BuildConfig.UPDATE_MANIFEST_URL,
             lastUpdateCheck = p[Keys.lastUpdateCheck] ?: 0L,
             excludedSubscriptions = p[Keys.excludedSubs] ?: emptySet(),
+            monthlySavingGoalAgorot = p[Keys.monthlySavingGoal] ?: Settings.DEFAULT_MONTHLY_SAVING_GOAL,
+            weeklyIncomeGoalAgorot = p[Keys.weeklyIncomeGoal] ?: Settings.DEFAULT_WEEKLY_INCOME_GOAL,
+            workSummaryEnabled = p[Keys.workSummaryEnabled] ?: true,
         )
     }
 
@@ -83,4 +97,7 @@ class SettingsStore(private val context: Context) {
     suspend fun setAlert100(v: Boolean) = context.dataStore.edit { it[Keys.alert100] = v }
     suspend fun setLastUpdateCheck(v: Long) = context.dataStore.edit { it[Keys.lastUpdateCheck] = v }
     suspend fun setExcludedSubscriptions(v: Set<String>) = context.dataStore.edit { it[Keys.excludedSubs] = v }
+    suspend fun setMonthlySavingGoal(agorot: Long) = context.dataStore.edit { it[Keys.monthlySavingGoal] = agorot.coerceAtLeast(0L) }
+    suspend fun setWeeklyIncomeGoal(agorot: Long) = context.dataStore.edit { it[Keys.weeklyIncomeGoal] = agorot.coerceAtLeast(0L) }
+    suspend fun setWorkSummaryEnabled(v: Boolean) = context.dataStore.edit { it[Keys.workSummaryEnabled] = v }
 }

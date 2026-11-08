@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -52,8 +53,9 @@ import com.tamir.drift.ui.theme.DriftColors
 import com.tamir.drift.ui.theme.DriftType
 import kotlin.math.roundToInt
 
+/** PRD "תקציב חודשי". Reached from the home hero and from settings (no longer a bottom tab). */
 @Composable
-fun BudgetScreen() {
+fun BudgetScreen(onBack: () -> Unit) {
     val graph = LocalAppGraph.current
     val vm = driftViewModel { BudgetViewModel(graph) }
     val state by vm.state.collectAsStateWithLifecycle()
@@ -64,11 +66,11 @@ fun BudgetScreen() {
     var editCategory by remember { mutableStateOf<CategoryEntity?>(null) }
 
     LazyColumn(
-        Modifier.fillMaxSize().statusBarsPadding(),
-        contentPadding = PaddingValues(start = 22.dp, end = 22.dp, top = 12.dp, bottom = 8.dp),
+        Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(),
+        contentPadding = PaddingValues(start = 22.dp, end = 22.dp, top = 12.dp, bottom = 16.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        item { ScreenHeader(stringResource(R.string.budget_title), onBack = null) }
+        item { ScreenHeader(stringResource(R.string.budget_title), onBack = onBack, backDescription = stringResource(R.string.nav_back)) }
 
         // Total budget card (tap to edit)
         item {

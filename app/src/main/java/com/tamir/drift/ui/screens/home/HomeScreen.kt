@@ -1,6 +1,9 @@
 package com.tamir.drift.ui.screens.home
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -8,14 +11,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -48,6 +55,8 @@ fun HomeScreen(
     onOpenAll: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenSearch: () -> Unit,
+    onOpenBudget: () -> Unit,
+    onOpenGoal: () -> Unit,
 ) {
     val graph = LocalAppGraph.current
     val vm = driftViewModel { HomeViewModel(graph) }
@@ -80,7 +89,10 @@ fun HomeScreen(
         item {
             val remaining = summary?.remaining ?: 0.0
             val over = remaining < 0
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(onClick = onOpenBudget),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
                 Text(
                     stringResource(if (over) R.string.home_over_label else R.string.home_remaining_label),
                     style = DriftType.Label13, color = DriftColors.TextSecondary,
@@ -133,6 +145,23 @@ fun HomeScreen(
                     Stat(stringResource(R.string.home_vs_month, prevMonthName), monthText, monthColor),
                 ),
             )
+        }
+
+        // PRD 8 Nov: "הרווחת החודש X ₪ · נחסכו Y ₪" → goal screen
+        item {
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(onClick = onOpenGoal).padding(horizontal = 4.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Box(Modifier.size(8.dp).background(if (state.savedThisMonth >= 0) DriftColors.Lime else DriftColors.Orange, CircleShape))
+                Text(
+                    stringResource(R.string.home_earned_saved, Fmt.money(state.earnedThisMonth), Fmt.money(state.savedThisMonth)),
+                    style = DriftType.Label12, color = DriftColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(stringResource(R.string.nav_goal), style = DriftType.Link12, color = DriftColors.Lime)
+            }
         }
 
         // Category grid 2×2
