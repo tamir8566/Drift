@@ -18,7 +18,7 @@ import androidx.room.RoomDatabase
         AlertSentEntity::class,
     ],
     version = 1,
-    exportSchema = true,
+    exportSchema = false,
 )
 abstract class DriftDatabase : RoomDatabase() {
     abstract fun transactions(): TransactionDao
