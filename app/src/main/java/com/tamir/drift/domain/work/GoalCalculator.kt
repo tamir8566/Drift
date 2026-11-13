@@ -20,9 +20,16 @@ data class MonthGoalStatus(
     /** Days of the month that already passed, including today (0 when the month is in the future). */
     val daysElapsed: Int,
     val daysInMonth: Int,
-    /** Hourly rate of the main job, used to express money as working hours. */
+    /**
+     * Rate of the main job, used to express money as work: agorot per hour for an hourly job,
+     * agorot per day for a daily one (see [mainPayType]).
+     */
     val mainRateAgorot: Long,
+    /** Pay type of the main job: decides whether shortfalls are given in hours or in days. */
+    val mainPayType: PayType = PayType.HOURLY,
 ) {
+    /** True when the main job is paid per day — the UI then shows "עוד כ־N ימי עבודה". */
+    val mainJobIsDaily: Boolean get() = mainPayType == PayType.DAILY
     /** PRD: saved this month = shifts income − Σ amountMine of the month's transactions. May be negative. */
     val savedAgorot: Long get() = earnedAgorot - spentAgorot
 
@@ -39,19 +46,29 @@ data class MonthGoalStatus(
     /** How far behind the pro-rated goal (0 when on track). */
     val shortfallAgorot: Long get() = (expectedByNowAgorot - savedAgorot).coerceAtLeast(0L)
 
-    /** PRD: "עוד כ־N שעות עבודה" — N = ceil(shortfall / main rate). */
-    val shortfallHours: Int get() = hoursFor(shortfallAgorot)
+    /** PRD: "עוד כ־N שעות עבודה" — N = ceil(shortfall / main hourly rate). 0 when the main job is daily. */
+    val shortfallHours: Int get() = if (mainJobIsDaily) 0 else unitsFor(shortfallAgorot)
+
+    /** "עוד כ־N ימי עבודה" — N = ceil(shortfall / main daily rate). 0 when the main job is hourly. */
+    val shortfallDays: Int get() = if (mainJobIsDaily) unitsFor(shortfallAgorot) else 0
 
     /** What is still missing to reach the full monthly goal (0 when met). */
     val remainingToGoalAgorot: Long get() = (goalAgorot - savedAgorot).coerceAtLeast(0L)
 
-    /** Hours of work that would close [remainingToGoalAgorot] (the recommendation line). */
-    val remainingHours: Int get() = hoursFor(remainingToGoalAgorot)
+    /** Hours of work that would close [remainingToGoalAgorot] (the recommendation line). 0 for a daily main job. */
+    val remainingHours: Int get() = if (mainJobIsDaily) 0 else unitsFor(remainingToGoalAgorot)
+
+    /** Days of work that would close [remainingToGoalAgorot]. 0 for an hourly main job. */
+    val remainingDays: Int get() = if (mainJobIsDaily) unitsFor(remainingToGoalAgorot) else 0
 
     val isGoalMet: Boolean get() = goalAgorot > 0 && savedAgorot >= goalAgorot
 
-    fun hoursFor(agorot: Long): Int =
+    /** Work units (hours or days, per [mainPayType]) that cover [agorot] at the main rate. */
+    fun unitsFor(agorot: Long): Int =
         if (mainRateAgorot <= 0L || agorot <= 0L) 0 else ceil(agorot.toDouble() / mainRateAgorot).toInt()
+
+    /** Kept for callers that think in hours; same as [unitsFor]. */
+    fun hoursFor(agorot: Long): Int = unitsFor(agorot)
 }
 
 /** A Sunday–Saturday week, possibly clipped to the month it belongs to. Both ends inclusive. */
@@ -102,6 +119,8 @@ object GoalCalculator {
         mainRateAgorot: Long,
         /** Tracking start: days before it are not expected to have saved anything. */
         startDate: LocalDate? = null,
+        /** Pay type of the main job; with [PayType.DAILY] the rate is per day and shortfalls are in days. */
+        mainPayType: PayType = PayType.HOURLY,
     ): MonthGoalStatus {
         val first = month.atDay(1)
         val last = month.atEndOfMonth()
@@ -121,7 +140,14 @@ object GoalCalculator {
             daysElapsed = daysElapsed,
             daysInMonth = daysInMonth,
             mainRateAgorot = mainRateAgorot,
+            mainPayType = mainPayType,
         )
+    }
+
+    /** Σ hours of the month's shifts that belong to hourly jobs (days of daily jobs carry no hours). */
+    fun hourlyHoursIn(shifts: List<ShiftSummary>, jobs: List<JobSummary>, month: YearMonth): Double {
+        val hourlyIds = jobs.filter { it.payType == PayType.HOURLY }.map { it.id }.toSet()
+        return hoursIn(shifts.filter { it.jobId in hourlyIds }, month)
     }
 
     /** Σ shift amounts whose day falls in [month]. */

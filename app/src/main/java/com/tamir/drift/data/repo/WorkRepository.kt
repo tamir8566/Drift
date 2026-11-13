@@ -6,7 +6,9 @@ import com.tamir.drift.data.db.DriftDatabase
 import com.tamir.drift.data.db.JobEntity
 import com.tamir.drift.data.db.PlannedDayEntity
 import com.tamir.drift.data.db.ShiftEntity
+import com.tamir.drift.data.db.pay
 import com.tamir.drift.domain.work.JobSummary
+import com.tamir.drift.domain.work.PayType
 import com.tamir.drift.domain.work.ShiftCalculator
 import com.tamir.drift.domain.work.ShiftSummary
 import kotlinx.coroutines.flow.Flow
@@ -38,11 +40,22 @@ class WorkRepository(private val context: Context, private val db: DriftDatabase
     suspend fun getShifts(): List<ShiftEntity> = db.shifts().getAll()
     suspend fun getShift(id: Long): ShiftEntity? = db.shifts().getById(id)
 
-    suspend fun addJob(name: String, hourlyRateAgorot: Long, shabbatMultiplier: Double): Long {
+    /**
+     * Adds a job. [rateAgorot] is per hour for [PayType.HOURLY] and per day for [PayType.DAILY];
+     * the other rate column is stored as 0.
+     */
+    suspend fun addJob(name: String, payType: PayType, rateAgorot: Long, shabbatMultiplier: Double): Long {
         val used = db.jobs().getAll().map { it.color }
         val color = PALETTE.firstOrNull { it !in used } ?: PALETTE[used.size % PALETTE.size]
         return db.jobs().insert(
-            JobEntity(name = name.trim(), hourlyRateAgorot = hourlyRateAgorot, shabbatMultiplier = shabbatMultiplier, color = color),
+            JobEntity(
+                name = name.trim(),
+                hourlyRateAgorot = if (payType == PayType.HOURLY) rateAgorot else 0L,
+                shabbatMultiplier = shabbatMultiplier,
+                color = color,
+                payType = payType.name,
+                dailyRateAgorot = if (payType == PayType.DAILY) rateAgorot else 0L,
+            ),
         )
     }
 
@@ -65,7 +78,10 @@ class WorkRepository(private val context: Context, private val db: DriftDatabase
         note: String?,
     ): Long {
         val job = db.jobs().getById(jobId)
-        val amount = ShiftCalculator.resolve(hours, job?.hourlyRateAgorot ?: 0L, isShabbatRate, job?.shabbatMultiplier ?: 1.5, manualAmountAgorot)
+        val amount = ShiftCalculator.resolve(
+            job?.pay ?: PayType.HOURLY, hours, job?.hourlyRateAgorot ?: 0L, job?.dailyRateAgorot ?: 0L,
+            isShabbatRate, job?.shabbatMultiplier ?: 1.5, manualAmountAgorot,
+        )
         return db.shifts().insert(
             ShiftEntity(
                 jobId = jobId,
@@ -93,7 +109,10 @@ class WorkRepository(private val context: Context, private val db: DriftDatabase
         note: String?,
     ) {
         val job = db.jobs().getById(jobId)
-        val amount = ShiftCalculator.resolve(hours, job?.hourlyRateAgorot ?: 0L, isShabbatRate, job?.shabbatMultiplier ?: 1.5, manualAmountAgorot)
+        val amount = ShiftCalculator.resolve(
+            job?.pay ?: PayType.HOURLY, hours, job?.hourlyRateAgorot ?: 0L, job?.dailyRateAgorot ?: 0L,
+            isShabbatRate, job?.shabbatMultiplier ?: 1.5, manualAmountAgorot,
+        )
         db.shifts().update(
             existing.copy(
                 jobId = jobId,
@@ -126,7 +145,9 @@ class WorkRepository(private val context: Context, private val db: DriftDatabase
     }
 }
 
-fun JobEntity.toSummary(): JobSummary = JobSummary(id, name, hourlyRateAgorot, shabbatMultiplier, isActive)
+fun JobEntity.toSummary(): JobSummary = JobSummary(id, name, hourlyRateAgorot, shabbatMultiplier, isActive, pay, dailyRateAgorot)
+
+fun List<JobEntity>.toJobSummaries(): List<JobSummary> = map { it.toSummary() }
 
 fun ShiftEntity.toSummary(): ShiftSummary = ShiftSummary(id, jobId, date, hours, amountAgorot, isShabbatRate)
 

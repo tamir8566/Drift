@@ -36,7 +36,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tamir.drift.R
 import com.tamir.drift.data.db.ShiftEntity
+import com.tamir.drift.data.db.isDaily
 import com.tamir.drift.data.repo.Money
+import com.tamir.drift.domain.work.PayType
 import com.tamir.drift.domain.work.ShiftCalculator
 import com.tamir.drift.ui.LocalAppGraph
 import com.tamir.drift.ui.components.Chip
@@ -66,6 +68,8 @@ private const val MODE_HOURS = "hours"
 /**
  * PRD "רישום משמרת": job chips, date (text entry, default today), start/end time or a number of
  * hours, "תעריף שבת" toggle, the computed amount shown large and editable (→ manualAmount).
+ * For a daily-paid job the hours inputs are hidden: the amount is the daily rate (× the Shabbat
+ * multiplier) and the shift is stored with hours = 0.
  * With [shiftId] the same screen edits an existing shift (and can delete it).
  */
 @Composable
@@ -132,20 +136,25 @@ fun AddShiftScreen(shiftId: Long?, onDone: () -> Unit) {
     }
 
     val job = jobs.firstOrNull { it.id == jobId }
+    val daily = job?.isDaily == true
     val startMin = ShiftCalculator.parseClock(start)
     val endMin = ShiftCalculator.parseClock(end)
-    val hours: Double? = when (mode) {
-        MODE_TIMES -> if (startMin != null && endMin != null) ShiftCalculator.hoursBetween(startMin, endMin) else null
+    val hours: Double? = when {
+        daily -> 0.0
+        mode == MODE_TIMES -> if (startMin != null && endMin != null) ShiftCalculator.hoursBetween(startMin, endMin) else null
         else -> hoursText.replace(",", ".").toDoubleOrNull()?.takeIf { it > 0.0 }
     }
     val rate = job?.hourlyRateAgorot ?: 0L
+    val dailyRate = job?.dailyRateAgorot ?: 0L
     val multiplier = job?.shabbatMultiplier ?: 1.5
-    val computedAgorot = ShiftCalculator.amount(hours ?: 0.0, rate, shabbat, multiplier)
+    val computedAgorot = ShiftCalculator.amount(
+        if (daily) PayType.DAILY else PayType.HOURLY, hours ?: 0.0, rate, dailyRate, shabbat, multiplier,
+    )
     val manualValue = amountText.replace(",", "").toDoubleOrNull()
     val shownAmount = if (manual) amountText else Fmt.moneyExact(computedAgorot).replace(",", "")
     val amountOk = if (manual) manualValue != null && manualValue >= 0.0 else computedAgorot >= 0L
-    val timesOk = mode != MODE_TIMES || (startMin != null && endMin != null)
-    val hoursOk = hours != null && hours > 0.0
+    val timesOk = daily || mode != MODE_TIMES || (startMin != null && endMin != null)
+    val hoursOk = daily || (hours != null && hours > 0.0)
     val valid = loaded && job != null && dateValue != null && timesOk && hoursOk && amountOk
 
     Column(
@@ -175,12 +184,19 @@ fun AddShiftScreen(shiftId: Long?, onDone: () -> Unit) {
 
         DateField(date, { date = it }, stringResource(R.string.shift_date), errorText = stringResource(R.string.date_invalid))
 
-        // Times or hours
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Chip(stringResource(R.string.shift_mode_hours), mode == MODE_HOURS, onClick = { mode = MODE_HOURS })
-            Chip(stringResource(R.string.shift_mode_times), mode == MODE_TIMES, onClick = { mode = MODE_TIMES })
+        // Daily job: no hours at all — one line with the day rate. Hourly job: times or hours.
+        if (daily) {
+            Text(
+                stringResource(R.string.shift_daily_label, Fmt.moneyExact(dailyRate)),
+                style = DriftType.Label13, color = DriftColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+        } else {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Chip(stringResource(R.string.shift_mode_hours), mode == MODE_HOURS, onClick = { mode = MODE_HOURS })
+                Chip(stringResource(R.string.shift_mode_times), mode == MODE_TIMES, onClick = { mode = MODE_TIMES })
+            }
         }
-        if (mode == MODE_TIMES) {
+        if (!daily && mode == MODE_TIMES) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 DriftTextField(
                     start, { start = it }, stringResource(R.string.shift_start), modifier = Modifier.weight(1f),
@@ -201,7 +217,7 @@ fun AddShiftScreen(shiftId: Long?, onDone: () -> Unit) {
                     style = DriftType.Label12, color = DriftColors.TextSecondary,
                 )
             }
-        } else {
+        } else if (!daily) {
             DriftTextField(
                 hoursText, { hoursText = it }, stringResource(R.string.shift_hours), keyboardType = KeyboardType.Decimal,
                 isError = hoursText.isNotBlank() && !hoursOk,
@@ -232,10 +248,11 @@ fun AddShiftScreen(shiftId: Long?, onDone: () -> Unit) {
                     )
                     Text(stringResource(R.string.shekel), style = DriftType.HeroCurrency, color = DriftColors.TextSecondary)
                 }
-                val formula = if (shabbat) {
-                    stringResource(R.string.shift_amount_formula_shabbat, ShiftCalculator.formatHours(hours ?: 0.0), Fmt.moneyExact(rate), ShiftCalculator.formatHours(multiplier))
-                } else {
-                    stringResource(R.string.shift_amount_formula, ShiftCalculator.formatHours(hours ?: 0.0), Fmt.moneyExact(rate))
+                val formula = when {
+                    daily && shabbat -> stringResource(R.string.shift_amount_formula_daily_shabbat, Fmt.moneyExact(dailyRate), ShiftCalculator.formatHours(multiplier))
+                    daily -> stringResource(R.string.shift_amount_formula_daily, Fmt.moneyExact(dailyRate))
+                    shabbat -> stringResource(R.string.shift_amount_formula_shabbat, ShiftCalculator.formatHours(hours ?: 0.0), Fmt.moneyExact(rate), ShiftCalculator.formatHours(multiplier))
+                    else -> stringResource(R.string.shift_amount_formula, ShiftCalculator.formatHours(hours ?: 0.0), Fmt.moneyExact(rate))
                 }
                 Text(formula, style = DriftType.Label11, color = DriftColors.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (manual) {
@@ -255,7 +272,7 @@ fun AddShiftScreen(shiftId: Long?, onDone: () -> Unit) {
             val d = dateValue ?: return@PrimaryButton
             val h = hours ?: return@PrimaryButton
             val manualAgorot = if (manual) manualValue?.let { Money.toAgorot(it) } else null
-            val (st, en) = if (mode == MODE_TIMES) startMin to endMin else null to null
+            val (st, en) = if (!daily && mode == MODE_TIMES) startMin to endMin else null to null
             scope.launch {
                 val cur = existing
                 if (cur == null) graph.work.addShift(j.id, d, st, en, h, shabbat, manualAgorot, note)

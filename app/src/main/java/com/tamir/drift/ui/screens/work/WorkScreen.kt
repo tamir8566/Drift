@@ -32,8 +32,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tamir.drift.R
 import com.tamir.drift.data.db.JobEntity
 import com.tamir.drift.data.db.ShiftEntity
+import com.tamir.drift.data.db.isDaily
+import com.tamir.drift.data.db.pay
+import com.tamir.drift.domain.work.PayType
 import com.tamir.drift.domain.work.ShiftCalculator
 import com.tamir.drift.ui.LocalAppGraph
+import com.tamir.drift.ui.components.Chip
 import com.tamir.drift.ui.components.DriftDialog
 import com.tamir.drift.ui.components.DriftTextField
 import com.tamir.drift.ui.components.EmptyNote
@@ -68,7 +72,12 @@ fun WorkScreen(onAddShift: () -> Unit, onEditShift: (Long) -> Unit) {
         contentPadding = PaddingValues(start = 22.dp, end = 22.dp, top = 12.dp, bottom = 8.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        item { ScreenHeader(stringResource(R.string.work_title), onBack = null) }
+        item {
+            ScreenHeader(
+                stringResource(R.string.work_title), onBack = null,
+                endContent = { Chip(stringResource(R.string.work_add_job_short), selected = true, onClick = { showNewJob = true }) },
+            )
+        }
 
         // Hero: earned this month
         item {
@@ -89,7 +98,7 @@ fun WorkScreen(onAddShift: () -> Unit, onEditShift: (Long) -> Unit) {
             StatTriplet(
                 listOf(
                     Stat(stringResource(R.string.work_this_week), stringResource(R.string.amount_with_shekel, Fmt.moneyAgorot(state.earnedWeekAgorot)), DriftColors.Lime),
-                    Stat(stringResource(R.string.work_hours_month), stringResource(R.string.work_hours_value, ShiftCalculator.formatHours(state.hoursMonth))),
+                    Stat(stringResource(R.string.work_hours_month), ShiftCalculator.formatHoursShort(state.hoursMonth)),
                     Stat(stringResource(R.string.work_recent_shifts), state.shiftsMonth.toString()),
                 ),
             )
@@ -130,7 +139,11 @@ fun WorkScreen(onAddShift: () -> Unit, onEditShift: (Long) -> Unit) {
                                 JobCard(
                                     name = c.job.name,
                                     amountText = stringResource(R.string.amount_with_shekel, Fmt.moneyAgorot(c.monthAmountAgorot)),
-                                    metaText = stringResource(R.string.work_job_card_meta, ShiftCalculator.formatHours(c.monthHours), Fmt.moneyAgorot(c.weekAmountAgorot)),
+                                    metaText = if (c.job.isDaily) {
+                                        stringResource(R.string.work_job_card_meta_daily, c.monthDays, Fmt.moneyAgorot(c.weekAmountAgorot))
+                                    } else {
+                                        stringResource(R.string.work_job_card_meta, ShiftCalculator.formatHours(c.monthHours), Fmt.moneyAgorot(c.weekAmountAgorot))
+                                    },
                                     percent = c.weekPercent,
                                     barFraction = c.weekFraction.toFloat(),
                                     color = Color(c.job.color),
@@ -175,26 +188,31 @@ fun WorkScreen(onAddShift: () -> Unit, onEditShift: (Long) -> Unit) {
     }
 
     if (showNewJob) {
-        JobDialog(title = stringResource(R.string.work_add_job), job = null, onDismiss = { showNewJob = false }) { name, rate, mult ->
-            vm.addJob(name, rate, mult); showNewJob = false
+        JobDialog(title = stringResource(R.string.work_add_job), job = null, onDismiss = { showNewJob = false }) { name, payType, rate, mult ->
+            vm.addJob(name, payType, rate, mult); showNewJob = false
         }
     }
     editingJob?.let { job ->
-        JobDialog(title = stringResource(R.string.edit), job = job, onDismiss = { editingJob = null }) { name, rate, mult ->
-            vm.updateJob(job, name, rate, mult); editingJob = null
+        JobDialog(title = stringResource(R.string.edit), job = job, onDismiss = { editingJob = null }) { name, payType, rate, mult ->
+            vm.updateJob(job, name, payType, rate, mult); editingJob = null
         }
     }
 }
 
-/** "job · date · hours · שבת" row with the amount, reusing the transaction row shape. */
+/** "job · date · hours · שבת" row with the amount, reusing the transaction row shape. A daily job shows "יום" instead of hours. */
 @Composable
 fun ShiftRow(shift: ShiftEntity, job: JobEntity?, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val date = LocalDate.ofEpochDay(shift.date)
+    val daily = job?.isDaily == true
     val meta = buildList {
         add(Fmt.shortDate(date))
-        add(stringResource(R.string.work_hours_value, ShiftCalculator.formatHours(shift.hours)))
-        if (shift.startTime != null && shift.endTime != null) {
-            add("${ShiftCalculator.formatClock(shift.startTime)}–${ShiftCalculator.formatClock(shift.endTime)}")
+        if (daily) {
+            add(stringResource(R.string.work_shift_day))
+        } else {
+            add(stringResource(R.string.work_hours_value, ShiftCalculator.formatHours(shift.hours)))
+            if (shift.startTime != null && shift.endTime != null) {
+                add("${ShiftCalculator.formatClock(shift.startTime)}–${ShiftCalculator.formatClock(shift.endTime)}")
+            }
         }
     }.joinToString(" · ")
     TransactionRow(
@@ -221,7 +239,8 @@ private fun JobRow(job: JobEntity, onEdit: () -> Unit, onToggleActive: () -> Uni
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
             val meta = buildList {
-                add(stringResource(R.string.work_job_rate, Fmt.moneyExact(job.hourlyRateAgorot)))
+                if (job.isDaily) add(stringResource(R.string.work_job_rate_daily, Fmt.moneyExact(job.dailyRateAgorot)))
+                else add(stringResource(R.string.work_job_rate, Fmt.moneyExact(job.hourlyRateAgorot)))
                 add(stringResource(R.string.work_job_shabbat, ShiftCalculator.formatHours(job.shabbatMultiplier)))
                 if (!job.isActive) add(stringResource(R.string.work_job_inactive))
             }.joinToString(" · ")
@@ -236,23 +255,52 @@ private fun JobRow(job: JobEntity, onEdit: () -> Unit, onToggleActive: () -> Uni
 }
 
 @Composable
-private fun JobDialog(title: String, job: JobEntity?, onDismiss: () -> Unit, onSave: (String, Double, Double) -> Unit) {
+private fun JobDialog(title: String, job: JobEntity?, onDismiss: () -> Unit, onSave: (String, PayType, Double, Double) -> Unit) {
     var name by remember { mutableStateOf(job?.name ?: "") }
-    var rate by remember { mutableStateOf(job?.let { Fmt.moneyExact(it.hourlyRateAgorot).replace(",", "") } ?: "") }
+    var payType by remember { mutableStateOf(job?.pay ?: PayType.HOURLY) }
+    // One field per pay type so switching chips does not lose what was typed.
+    var hourlyRate by remember { mutableStateOf(job?.takeIf { it.hourlyRateAgorot > 0L }?.let { Fmt.moneyExact(it.hourlyRateAgorot).replace(",", "") } ?: "") }
+    var dailyRate by remember { mutableStateOf(job?.takeIf { it.dailyRateAgorot > 0L }?.let { Fmt.moneyExact(it.dailyRateAgorot).replace(",", "") } ?: "") }
     var multiplier by remember { mutableStateOf(job?.let { ShiftCalculator.formatHours(it.shabbatMultiplier) } ?: "1.5") }
+    val rate = when (payType) {
+        PayType.HOURLY -> hourlyRate
+        PayType.DAILY -> dailyRate
+    }
     val rateValue = rate.replace(",", "").toDoubleOrNull()
     val multValue = multiplier.replace(",", ".").toDoubleOrNull()
-    val valid = name.isNotBlank() && rateValue != null && rateValue > 0 && multValue != null && multValue >= 1.0
+    val rateOk = rateValue != null && rateValue > 0.0
+    val multOk = multValue != null && multValue >= 1.0
+    val valid = name.isNotBlank() && rateOk && multOk
     DriftDialog(
         title = title,
         onDismiss = onDismiss,
         confirmText = stringResource(R.string.save),
-        onConfirm = { if (valid) onSave(name.trim(), rateValue!!, multValue!!) },
+        onConfirm = { if (valid) onSave(name.trim(), payType, rateValue!!, multValue!!) },
         dismissText = stringResource(R.string.cancel),
         confirmEnabled = valid,
     ) {
         DriftTextField(name, { name = it }, stringResource(R.string.work_job_name))
-        DriftTextField(rate, { rate = it }, stringResource(R.string.work_job_hourly_rate), keyboardType = KeyboardType.Decimal)
-        DriftTextField(multiplier, { multiplier = it }, stringResource(R.string.work_job_multiplier), keyboardType = KeyboardType.Decimal)
+        Text(stringResource(R.string.work_pay_type), style = DriftType.Label12, color = DriftColors.TextSecondary)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Chip(stringResource(R.string.work_pay_hourly), payType == PayType.HOURLY, onClick = { payType = PayType.HOURLY })
+            Chip(stringResource(R.string.work_pay_daily), payType == PayType.DAILY, onClick = { payType = PayType.DAILY })
+        }
+        when (payType) {
+            PayType.HOURLY -> DriftTextField(
+                hourlyRate, { hourlyRate = it }, stringResource(R.string.work_job_hourly_rate), keyboardType = KeyboardType.Decimal,
+                isError = hourlyRate.isNotBlank() && !rateOk,
+                supporting = if (hourlyRate.isNotBlank() && !rateOk) stringResource(R.string.work_job_invalid_rate) else null,
+            )
+            PayType.DAILY -> DriftTextField(
+                dailyRate, { dailyRate = it }, stringResource(R.string.work_job_daily_rate), keyboardType = KeyboardType.Decimal,
+                isError = dailyRate.isNotBlank() && !rateOk,
+                supporting = if (dailyRate.isNotBlank() && !rateOk) stringResource(R.string.work_job_invalid_rate) else null,
+            )
+        }
+        DriftTextField(
+            multiplier, { multiplier = it }, stringResource(R.string.work_job_multiplier), keyboardType = KeyboardType.Decimal,
+            isError = multiplier.isNotBlank() && !multOk,
+            supporting = if (multiplier.isNotBlank() && !multOk) stringResource(R.string.work_job_invalid_multiplier) else null,
+        )
     }
 }

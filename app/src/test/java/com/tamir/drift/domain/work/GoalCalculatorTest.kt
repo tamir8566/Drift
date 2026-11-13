@@ -78,6 +78,44 @@ class GoalCalculatorTest {
     }
 
     @Test
+    fun `daily main job expresses the shortfall in days`() {
+        // Behind by 392 ₪ (1,000 expected − 608 earned); daily rate 300 ₪ → 2 days.
+        val shifts = listOf(shift(day(2026, 11, 2), 8.0), shift(day(2026, 11, 3), 8.0))
+        val s = GoalCalculator.monthStatus(shifts, emptyList(), nov, day(2026, 11, 10), zone, 3_000_00L, 300_00L, mainPayType = PayType.DAILY)
+        assertTrue(s.mainJobIsDaily)
+        assertEquals(392_00L, s.shortfallAgorot)
+        assertEquals(2, s.shortfallDays)
+        assertEquals(0, s.shortfallHours)
+        assertEquals(2_392_00L, s.remainingToGoalAgorot)
+        assertEquals(8, s.remainingDays) // ceil(2,392 / 300)
+        assertEquals(0, s.remainingHours)
+
+        val hourly = GoalCalculator.monthStatus(shifts, emptyList(), nov, day(2026, 11, 10), zone, 3_000_00L, rate)
+        assertFalse(hourly.mainJobIsDaily)
+        assertEquals(0, hourly.shortfallDays)
+        assertEquals(11, hourly.shortfallHours)
+    }
+
+    @Test
+    fun `month hours count only the shifts of hourly jobs`() {
+        val jobs = listOf(
+            JobSummary(1L, "hourly", rate),
+            JobSummary(2L, "daily", 0L, payType = PayType.DAILY, dailyRateAgorot = 300_00L),
+        )
+        val shifts = listOf(
+            shift(day(2026, 11, 2), 8.0, jobId = 1L),
+            ShiftSummary(nextId++, 2L, day(2026, 11, 3).toEpochDay(), 0.0, 300_00L),
+            // A stale hours value on a daily job must not leak into the hours stat.
+            ShiftSummary(nextId++, 2L, day(2026, 11, 4).toEpochDay(), 6.0, 300_00L),
+        )
+        assertEquals(8.0, GoalCalculator.hourlyHoursIn(shifts, jobs, nov), 0.001)
+        assertEquals(14.0, GoalCalculator.hoursIn(shifts, nov), 0.001)
+        assertEquals(904_00L, GoalCalculator.earnedIn(shifts, nov))
+        assertEquals(300_00L, jobs[1].unitRateAgorot)
+        assertEquals(rate, jobs[0].unitRateAgorot)
+    }
+
+    @Test
     fun `negative saving is possible and never on track`() {
         val txs = listOf(tx(500.0, at(2026, 11, 2)))
         val s = GoalCalculator.monthStatus(emptyList(), txs, nov, day(2026, 11, 2), zone, 1_000_00L, rate)

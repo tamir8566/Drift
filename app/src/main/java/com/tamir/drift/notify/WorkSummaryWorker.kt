@@ -9,8 +9,10 @@ import androidx.work.WorkerParameters
 import com.tamir.drift.R
 import com.tamir.drift.data.repo.toShiftSummaries
 import com.tamir.drift.data.repo.toSummaries
+import com.tamir.drift.data.repo.toSummary
 import com.tamir.drift.di.AppGraph
 import com.tamir.drift.domain.work.GoalCalculator
+import com.tamir.drift.domain.work.PayType
 import com.tamir.drift.ui.format.Fmt
 import java.time.DayOfWeek
 import java.time.Duration
@@ -46,10 +48,10 @@ class WorkSummaryWorker(appContext: Context, params: WorkerParameters) : Corouti
         val startDate = settings.trackingStartEpochDay?.let { LocalDate.ofEpochDay(it) }
         val week = GoalCalculator.weekStatus(shifts, today, settings.weeklyIncomeGoalAgorot, startDate)
         val jobs = graph.work.getJobs()
-        val mainRate = jobs.firstOrNull { it.isActive }?.hourlyRateAgorot ?: jobs.firstOrNull()?.hourlyRateAgorot ?: 0L
+        val mainJob = (jobs.firstOrNull { it.isActive } ?: jobs.firstOrNull())?.toSummary()
         val month = GoalCalculator.monthStatus(
             shifts, graph.db.transactions().getAll().toSummaries(), YearMonth.from(today), today, zone,
-            settings.monthlySavingGoalAgorot, mainRate, startDate,
+            settings.monthlySavingGoalAgorot, mainJob?.unitRateAgorot ?: 0L, startDate, mainJob?.payType ?: PayType.HOURLY,
         )
         val ctx = applicationContext
         val track = ctx.getString(if (month.onTrack) R.string.goal_on_track_short else R.string.goal_off_track_short)

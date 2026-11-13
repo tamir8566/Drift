@@ -1,8 +1,10 @@
 package com.tamir.drift.data.db
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import com.tamir.drift.domain.work.PayType
 
 /**
  * Room entities. All amounts are stored in agorot (Long) per the PRD.
@@ -113,12 +115,12 @@ data class AlertSentEntity(
     val sentAt: Long,
 )
 
-/** PRD "עבודות ומשמרות": a job with its hourly rate. */
+/** PRD "עבודות ומשמרות": a job with its rate — per hour, or a fixed amount per worked day. */
 @Entity(tableName = "jobs")
 data class JobEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
-    /** Agorot per hour. */
+    /** Agorot per hour (0 for a daily job). */
     val hourlyRateAgorot: Long,
     /** Factor applied when a shift is marked "תעריף שבת" (default 1.5). */
     val shabbatMultiplier: Double = 1.5,
@@ -126,7 +128,15 @@ data class JobEntity(
     val color: Long,
     val isActive: Boolean = true,
     val createdAt: Long = System.currentTimeMillis(),
+    /** [PayType] name: HOURLY / DAILY (stored as text, like the other enum-ish columns). Added in v3. */
+    @ColumnInfo(defaultValue = "HOURLY") val payType: String = PayType.HOURLY.name,
+    /** Agorot per worked day (0 for an hourly job). Added in v3. */
+    @ColumnInfo(defaultValue = "0") val dailyRateAgorot: Long = 0L,
 )
+
+/** Typed view of [JobEntity.payType] (kept outside the entity so Room sees only columns). */
+val JobEntity.pay: PayType get() = PayType.from(payType)
+val JobEntity.isDaily: Boolean get() = pay == PayType.DAILY
 
 /** One shift. The day is an epoch day (LocalDate.toEpochDay()); times are minutes from midnight. */
 @Entity(tableName = "shifts", indices = [Index("jobId"), Index("date")])

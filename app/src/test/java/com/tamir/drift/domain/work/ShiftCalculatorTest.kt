@@ -34,6 +34,43 @@ class ShiftCalculatorTest {
     }
 
     @Test
+    fun `daily job pays the daily rate regardless of hours`() {
+        val daily = 400_00L
+        assertEquals(400_00L, ShiftCalculator.dailyAmount(daily, false, 1.5))
+        assertEquals(600_00L, ShiftCalculator.dailyAmount(daily, true, 1.5))
+        assertEquals(0L, ShiftCalculator.dailyAmount(0L, true, 1.5))
+        // The typed amount wins; hours and hourly rate are ignored for a daily job.
+        assertEquals(400_00L, ShiftCalculator.amount(PayType.DAILY, 0.0, rate, daily, false, 1.5))
+        assertEquals(400_00L, ShiftCalculator.resolve(PayType.DAILY, 9.0, rate, daily, false, 1.5, null))
+        assertEquals(600_00L, ShiftCalculator.resolve(PayType.DAILY, 0.0, rate, daily, true, 1.5, null))
+        assertEquals(450_00L, ShiftCalculator.resolve(PayType.DAILY, 0.0, rate, daily, true, 1.5, 450_00L))
+    }
+
+    @Test
+    fun `hourly resolve with pay type matches the classic one`() {
+        assertEquals(304_00L, ShiftCalculator.resolve(PayType.HOURLY, 8.0, rate, 999_00L, false, 1.5, null))
+        assertEquals(456_00L, ShiftCalculator.resolve(PayType.HOURLY, 8.0, rate, 999_00L, true, 1.5, null))
+        assertEquals(350_00L, ShiftCalculator.resolve(PayType.HOURLY, 8.0, rate, 999_00L, false, 1.5, 350_00L))
+    }
+
+    @Test
+    fun `short hours format keeps at most one decimal`() {
+        assertEquals("23.1", ShiftCalculator.formatHoursShort(23.07))
+        assertEquals("23", ShiftCalculator.formatHoursShort(23.0))
+        assertEquals("6.5", ShiftCalculator.formatHoursShort(6.5))
+        assertEquals("8", ShiftCalculator.formatHoursShort(7.96))
+        assertEquals("0", ShiftCalculator.formatHoursShort(0.0))
+    }
+
+    @Test
+    fun `pay type parses leniently`() {
+        assertEquals(PayType.DAILY, PayType.from("DAILY"))
+        assertEquals(PayType.HOURLY, PayType.from("HOURLY"))
+        assertEquals(PayType.HOURLY, PayType.from(null))
+        assertEquals(PayType.HOURLY, PayType.from("junk"))
+    }
+
+    @Test
     fun `hours between start and end, including across midnight`() {
         assertEquals(8.0, ShiftCalculator.hoursBetween(9 * 60, 17 * 60), 0.001)
         assertEquals(7.5, ShiftCalculator.hoursBetween(9 * 60 + 30, 17 * 60), 0.001)

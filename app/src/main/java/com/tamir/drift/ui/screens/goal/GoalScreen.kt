@@ -128,7 +128,8 @@ fun GoalScreen() {
                     when {
                         status.isGoalMet -> Text(stringResource(R.string.goal_met), style = DriftType.Label12, color = DriftColors.Lime)
                         !status.onTrack -> Text(
-                            stringResource(R.string.goal_shortfall, Fmt.moneyAgorot(status.shortfallAgorot), status.shortfallHours),
+                            if (status.mainJobIsDaily) stringResource(R.string.goal_shortfall_days, Fmt.moneyAgorot(status.shortfallAgorot), status.shortfallDays)
+                            else stringResource(R.string.goal_shortfall, Fmt.moneyAgorot(status.shortfallAgorot), status.shortfallHours),
                             style = DriftType.Label12, color = DriftColors.Orange, maxLines = 2, overflow = TextOverflow.Ellipsis,
                         )
                     }
@@ -194,7 +195,8 @@ fun GoalScreen() {
             item {
                 GlassCard(Modifier.fillMaxWidth(), radius = 16.dp, borderColor = DriftColors.PlusBorder) {
                     Text(
-                        stringResource(R.string.goal_recommendation, status.remainingHours, Fmt.moneyAgorot(status.remainingToGoalAgorot)),
+                        if (status.mainJobIsDaily) stringResource(R.string.goal_recommendation_days, status.remainingDays, Fmt.moneyAgorot(status.remainingToGoalAgorot))
+                        else stringResource(R.string.goal_recommendation, status.remainingHours, Fmt.moneyAgorot(status.remainingToGoalAgorot)),
                         style = DriftType.Label13, color = DriftColors.Text, maxLines = 3, overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                     )

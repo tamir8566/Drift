@@ -33,6 +33,8 @@ object DriftType {
     val Link12 = TextStyle(fontFamily = Heebo, fontSize = 12.sp, fontWeight = FontWeight.Normal)
     /** Stat / category value: 20sp, 700. */
     val Value20 = TextStyle(fontFamily = Heebo, fontSize = 20.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.3).sp)
+    /** Value of a three-column stat tile: 18sp, 700 — three values must fit side by side on a 390dp screen. */
+    val Value18 = TextStyle(fontFamily = Heebo, fontSize = 18.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.3).sp)
     /** Transaction row: name 14sp 500, amount 15sp 700. */
     val RowTitle = TextStyle(fontFamily = Heebo, fontSize = 14.sp, fontWeight = FontWeight.Medium)
     val RowAmount = TextStyle(fontFamily = Heebo, fontSize = 15.sp, fontWeight = FontWeight.Bold)

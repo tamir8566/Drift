@@ -229,18 +229,21 @@ fun TransactionRow(
     }
 }
 
-/** One stat: 11sp secondary label above a 20sp bold value. */
+/**
+ * One stat: 11sp secondary label above an 18sp bold value. Keep the value short (a bare number,
+ * at most one decimal) and put the unit in the label — three of them share one card.
+ */
 data class Stat(val label: String, val value: String, val color: Color = DriftColors.Text)
 
-/** Glass card with three equal columns separated by white 10% hairlines. */
+/** Glass card with three equal columns separated by white 10% hairlines. Values never wrap or ellipsize. */
 @Composable
 fun StatTriplet(stats: List<Stat>, modifier: Modifier = Modifier) {
     GlassCard(modifier.fillMaxWidth(), radius = 22.dp) {
         Row(Modifier.padding(horizontal = 16.dp, vertical = 14.dp).height(IntrinsicSizeMin)) {
             stats.forEachIndexed { i, s ->
-                Column(Modifier.weight(1f).padding(horizontal = if (i == 0) 0.dp else 12.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Column(Modifier.weight(1f).padding(horizontal = if (i == 0) 0.dp else 10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(s.label, style = DriftType.Label11, color = DriftColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(s.value, style = DriftType.Value20, color = s.color, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(s.value, style = DriftType.Value18, color = s.color, maxLines = 1, softWrap = false, overflow = TextOverflow.Clip)
                 }
                 if (i < stats.lastIndex) {
                     Box(Modifier.width(1.dp).fillMaxHeight().background(DriftColors.StatDivider))

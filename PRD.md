@@ -128,7 +128,7 @@ https://link.max.co.il/5f093cf
 ### עבודות ומשמרות
 | ישות | שדות |
 | --- | --- |
-| Job (עבודה) | id, name, hourlyRate (אגורות), shabbatMultiplier (ברירת מחדל 1.5), color, isActive. מוזרע מראש: "אדם מילא", 38 ₪ לשעה |
+| Job (עבודה) | id, name, payType (לפי שעה / לפי יום), hourlyRate (אגורות), dailyRate (אגורות, לעבודה לפי יום), shabbatMultiplier (ברירת מחדל 1.5), color, isActive. מוזרע מראש: "אדם מילא", 38 ₪ לשעה. בעבודה לפי יום אין שעות: סכום יום = dailyRate × (shabbat ? multiplier : 1), ניתן לדריסה ידנית; "שעות החודש" סופר רק עבודות לפי שעה; החוסר ביעד מוצג כ"עוד כ־N ימי עבודה" כשהעבודה הראשית היא לפי יום |
 | Shift (משמרת) | id, jobId, date, startTime?, endTime?, hours (עשרוני), isShabbatRate, amount (אגורות; מחושב = hours × rate × (shabbat ? multiplier : 1), ניתן לדריסה ידנית → manualAmount=true), note |
 | PlannedDay (יום מתוכנן) | date, jobId? — ימים שסומנו מראש כימי עבודה |
 

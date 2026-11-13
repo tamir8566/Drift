@@ -13,7 +13,27 @@ object ShiftCalculator {
         return (hours * hourlyRateAgorot * factor).roundToLong()
     }
 
-    /** The stored amount: the manual override when the user typed one, else the computed value. */
+    /** A daily-paid job: amount = daily rate × (shabbat ? multiplier : 1); no hours involved. */
+    fun dailyAmount(dailyRateAgorot: Long, isShabbatRate: Boolean, shabbatMultiplier: Double): Long {
+        if (dailyRateAgorot <= 0L) return 0L
+        val factor = if (isShabbatRate) shabbatMultiplier else 1.0
+        return (dailyRateAgorot * factor).roundToLong()
+    }
+
+    /** The computed amount for either pay type. */
+    fun amount(
+        payType: PayType,
+        hours: Double,
+        hourlyRateAgorot: Long,
+        dailyRateAgorot: Long,
+        isShabbatRate: Boolean,
+        shabbatMultiplier: Double,
+    ): Long = when (payType) {
+        PayType.HOURLY -> amount(hours, hourlyRateAgorot, isShabbatRate, shabbatMultiplier)
+        PayType.DAILY -> dailyAmount(dailyRateAgorot, isShabbatRate, shabbatMultiplier)
+    }
+
+    /** The stored amount of an hourly shift: the manual override when the user typed one, else the computed value. */
     fun resolve(
         hours: Double,
         hourlyRateAgorot: Long,
@@ -21,6 +41,17 @@ object ShiftCalculator {
         shabbatMultiplier: Double,
         manualAmountAgorot: Long?,
     ): Long = manualAmountAgorot ?: amount(hours, hourlyRateAgorot, isShabbatRate, shabbatMultiplier)
+
+    /** The stored amount for either pay type: the manual override when given, else the computed value. */
+    fun resolve(
+        payType: PayType,
+        hours: Double,
+        hourlyRateAgorot: Long,
+        dailyRateAgorot: Long,
+        isShabbatRate: Boolean,
+        shabbatMultiplier: Double,
+        manualAmountAgorot: Long?,
+    ): Long = manualAmountAgorot ?: amount(payType, hours, hourlyRateAgorot, dailyRateAgorot, isShabbatRate, shabbatMultiplier)
 
     /**
      * Hours between two minutes-of-day. An end at or before the start means the shift crossed
@@ -48,6 +79,14 @@ object ShiftCalculator {
         val h = m / 60
         val min = m % 60
         return (if (h < 10) "0$h" else "$h") + ":" + (if (min < 10) "0$min" else "$min")
+    }
+
+    /** Compact form for stat tiles: "23" / "23.1" — at most one decimal, no trailing zero. */
+    fun formatHoursShort(hours: Double): String {
+        val rounded = (hours * 10).roundToLong()
+        val whole = rounded / 10
+        val frac = rounded % 10
+        return if (frac == 0L) whole.toString() else "$whole.$frac"
     }
 
     /** "6" for whole hours, "6.5" otherwise (at most two decimals, no trailing zeros). */

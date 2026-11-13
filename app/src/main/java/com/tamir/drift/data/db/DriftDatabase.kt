@@ -22,7 +22,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ShiftEntity::class,
         PlannedDayEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class DriftDatabase : RoomDatabase() {
@@ -77,9 +77,17 @@ abstract class DriftDatabase : RoomDatabase() {
             }
         }
 
+        /** v2 → v3: job pay type (per hour / per day) and the daily rate. Existing jobs stay hourly. */
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `jobs` ADD COLUMN `payType` TEXT NOT NULL DEFAULT 'HOURLY'")
+                db.execSQL("ALTER TABLE `jobs` ADD COLUMN `dailyRateAgorot` INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         fun build(context: Context): DriftDatabase =
             Room.databaseBuilder(context.applicationContext, DriftDatabase::class.java, "drift.db")
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 // Safety net for any other version jump (was already the policy before v2).
                 .fallbackToDestructiveMigration()
                 .build()
