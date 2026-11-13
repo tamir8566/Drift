@@ -85,7 +85,7 @@ fun DriftApp() {
             if (activeTab != null) {
                 DriftBottomBar(
                     active = activeTab,
-                    onTab = { tab -> nav.navigateTopLevel(tab) },
+                    onTab = { tab -> if (tab == activeTab) nav.resetTab(tab) else nav.navigateTopLevel(tab) },
                     onAdd = { showAddMenu = true },
                     modifier = Modifier.navigationBarsPadding(),
                 )
@@ -162,6 +162,27 @@ private fun NavHostController.navigateTopLevel(tab: BottomTab) {
         popUpTo(graph.findStartDestination().id) { saveState = true }
         launchSingleTop = true
         restoreState = true
+    }
+}
+
+private fun BottomTab.route(): String = when (this) {
+    BottomTab.HOME -> Routes.HOME
+    BottomTab.WHERE -> Routes.WHERE
+    BottomTab.WORK -> Routes.WORK
+    BottomTab.GOAL -> Routes.GOAL
+}
+
+/**
+ * Tapping the already-active tab brings its root screen back fresh: filters cleared, scrolled to
+ * the top, and anything the tab had pushed on top of it removed.
+ */
+private fun NavHostController.resetTab(tab: BottomTab) {
+    // The bar is only shown on a tab's root destination, so the current destination is that root.
+    val rootId = currentDestination?.id ?: return
+    navigate(tab.route()) {
+        popUpTo(rootId) { inclusive = true; saveState = false }
+        launchSingleTop = false
+        restoreState = false
     }
 }
 
