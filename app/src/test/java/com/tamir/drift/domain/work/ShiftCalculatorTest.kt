@@ -6,7 +6,7 @@ import org.junit.Test
 
 class ShiftCalculatorTest {
 
-    private val rate = 38_00L // אדם מילא, 38 ₪ per hour
+    private val rate = 38_00L // 38 ₪ per hour
 
     @Test
     fun `regular shift is hours times rate`() {

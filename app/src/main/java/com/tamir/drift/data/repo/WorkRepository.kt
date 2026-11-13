@@ -21,7 +21,7 @@ class WorkRepository(private val context: Context, private val db: DriftDatabase
     val shifts: Flow<List<ShiftEntity>> = db.shifts().observeAll()
     val plannedDays: Flow<List<PlannedDayEntity>> = db.plannedDays().observeAll()
 
-    /** PRD: one job is seeded on first run — "אדם מילא", 38 ₪ per hour. */
+    /** PRD: one example job is seeded on first run ("העבודה שלי", 40 ₪ per hour). */
     suspend fun ensureSeeded() {
         if (db.jobs().count() == 0) {
             db.jobs().insert(

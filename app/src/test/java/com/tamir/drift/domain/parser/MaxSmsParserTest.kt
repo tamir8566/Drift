@@ -60,11 +60,11 @@ class MaxSmsParserTest {
     @Test
     fun `variant wording - regular transaction, shekel symbol, gershayim`() {
         val r = parser.parse(
-            "היי, ביקשת שנעדכן אותך על כל עסקת אשראי: היום 02/11 בית עסק שופרסל דיל בת חפר חייב את כרטיסך 5678 בסך 1,214.50 ש\"ח",
+            "היי, ביקשת שנעדכן אותך על כל עסקת אשראי: היום 02/11 בית עסק שופרסל דיל נתניה חייב את כרטיסך 5678 בסך 1,214.50 ש\"ח",
         )
         assertEquals(ParseStatus.PARSED, r.status)
         assertEquals(1214.50, r.amount!!, 0.001)
-        assertEquals("שופרסל דיל בת חפר", r.merchant)
+        assertEquals("שופרסל דיל נתניה", r.merchant)
         assertEquals("5678", r.last4)
     }
 

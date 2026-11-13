@@ -11,7 +11,7 @@ class MerchantClassifierTest {
 
     @Test
     fun `israeli merchants from the PRD list`() {
-        assertEquals(CategoryKeys.GROCERIES, seeded.classify("שופרסל דיל בת חפר"))
+        assertEquals(CategoryKeys.GROCERIES, seeded.classify("שופרסל דיל נתניה"))
         assertEquals(CategoryKeys.GROCERIES, seeded.classify("רמי לוי שיווק השקמה"))
         assertEquals(CategoryKeys.GROCERIES, seeded.classify("ויקטורי"))
         assertEquals(CategoryKeys.GROCERIES, seeded.classify("יוחננוף"))
