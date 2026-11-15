@@ -20,7 +20,7 @@ class DriftApp : Application() {
         scope.launch {
             graph.categories.ensureSeeded()
             graph.work.ensureSeeded()
-            graph.settings.ensureTrackingStart(java.time.LocalDate.now().toEpochDay())
+            graph.settings.ensureTrackingStart()
             WeeklySummaryScheduler.schedule(this@DriftApp, graph.settings.current())
             WorkSummaryScheduler.schedule(this@DriftApp)
         }

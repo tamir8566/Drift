@@ -34,6 +34,7 @@ class BudgetAlertChecker(
             categories = db.categories().getAll(),
             budgets = db.budgets().getAll(),
             month = month,
+            window = s.trackingWindow,
             nowMillis = nowMillis,
         )
         val monthKey = month.toString()

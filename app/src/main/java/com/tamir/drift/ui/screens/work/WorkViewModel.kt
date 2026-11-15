@@ -70,11 +70,15 @@ class WorkViewModel(private val graph: AppGraph) : ViewModel() {
     ) { shifts, jobs, planned, settings, calMonth ->
         val today = LocalDate.now(zone)
         val month = YearMonth.from(today)
-        val summaries = shifts.toShiftSummaries()
+        // Tracking start: every total (month, week, hours, job cards) only counts shifts from it on.
+        // The calendar dots and the recent-shifts list still show all shifts.
+        val window = settings.trackingWindow
+        val counted = shifts.filter { window.includes(it.date) }
+        val summaries = counted.toShiftSummaries()
         val week = GoalCalculator.weekOf(today)
         val first = month.atDay(1).toEpochDay()
         val last = month.atEndOfMonth().toEpochDay()
-        val inMonth = shifts.filter { it.date in first..last }
+        val inMonth = counted.filter { it.date in first..last }
 
         val cards = jobs.filter { it.isActive }.map { job ->
             val mine = inMonth.filter { it.jobId == job.id }
@@ -83,7 +87,7 @@ class WorkViewModel(private val graph: AppGraph) : ViewModel() {
                 monthHours = if (job.isDaily) 0.0 else mine.sumOf { it.hours },
                 monthDays = mine.size,
                 monthAmountAgorot = mine.sumOf { it.amountAgorot },
-                weekAmountAgorot = shifts.filter { it.jobId == job.id && week.contains(it.date) }.sumOf { it.amountAgorot },
+                weekAmountAgorot = counted.filter { it.jobId == job.id && week.contains(it.date) }.sumOf { it.amountAgorot },
                 weeklyGoalAgorot = settings.weeklyIncomeGoalAgorot,
             )
         }.sortedByDescending { it.monthAmountAgorot }

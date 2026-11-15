@@ -53,6 +53,7 @@ import com.tamir.drift.notify.WeeklySummaryScheduler
 import com.tamir.drift.notify.WorkSummaryScheduler
 import com.tamir.drift.ui.LocalAppGraph
 import com.tamir.drift.ui.components.ChoiceRow
+import com.tamir.drift.ui.components.DateField
 import com.tamir.drift.ui.components.DriftDialog
 import com.tamir.drift.ui.components.DriftTextField
 import com.tamir.drift.ui.components.EmptyNote
@@ -61,6 +62,8 @@ import com.tamir.drift.ui.components.HairlineDivider
 import com.tamir.drift.ui.components.ScreenHeader
 import com.tamir.drift.ui.components.SectionHeader
 import com.tamir.drift.ui.components.SwitchRow
+import com.tamir.drift.ui.components.parseDate
+import com.tamir.drift.ui.components.toFieldText
 import com.tamir.drift.ui.format.Fmt
 import com.tamir.drift.ui.theme.DriftColors
 import com.tamir.drift.ui.theme.DriftType
@@ -68,6 +71,7 @@ import com.tamir.drift.update.LocalUpdateController
 import com.tamir.drift.update.UpdateChecker
 import kotlinx.coroutines.launch
 import java.time.DayOfWeek
+import java.time.LocalDate
 
 /** PRD "הגדרות". */
 @Composable
@@ -101,6 +105,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenCalibration: () -> Unit, onOpenDebu
     var editSenders by remember { mutableStateOf(false) }
     var editPackages by remember { mutableStateOf(false) }
     var editWeekly by remember { mutableStateOf(false) }
+    var editTrackingStart by remember { mutableStateOf(false) }
     var updateStatus by remember { mutableStateOf<String?>(null) }
 
     LazyColumn(
@@ -178,6 +183,24 @@ fun SettingsScreen(onBack: () -> Unit, onOpenCalibration: () -> Unit, onOpenDebu
                                 }
                             },
                             subtitle = stringResource(R.string.settings_work_summary_desc),
+                        )
+                    }
+                }
+            }
+        }
+
+        // Tracking start (PRD: statistics count from this date; default 1.12.2026)
+        item {
+            Column {
+                SectionHeader(stringResource(R.string.settings_tracking))
+                GlassCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
+                        val startText = settings?.let { Fmt.fullDate(LocalDate.ofEpochDay(it.trackingStartEpochDay)) } ?: ""
+                        NavRow(stringResource(R.string.settings_tracking_start), startText) { editTrackingStart = true }
+                        Text(
+                            stringResource(R.string.settings_tracking_start_desc),
+                            style = DriftType.Label11, color = DriftColors.TextSecondary,
+                            modifier = Modifier.padding(bottom = 10.dp),
                         )
                     }
                 }
@@ -272,6 +295,27 @@ fun SettingsScreen(onBack: () -> Unit, onOpenCalibration: () -> Unit, onOpenDebu
             }
             editWeekly = false
         }
+    }
+    if (editTrackingStart && s != null) {
+        TrackingStartDialog(LocalDate.ofEpochDay(s.trackingStartEpochDay), onDismiss = { editTrackingStart = false }) { date ->
+            scope.launch { graph.settings.setTrackingStart(date.toEpochDay()) }
+            editTrackingStart = false
+        }
+    }
+}
+
+/** Edits the tracking start as plain "day.month.year" text (no English month names, like the shift date). */
+@Composable
+private fun TrackingStartDialog(current: LocalDate, onDismiss: () -> Unit, onSave: (LocalDate) -> Unit) {
+    var text by remember { mutableStateOf(current.toFieldText()) }
+    val parsed = parseDate(text)
+    DriftDialog(
+        stringResource(R.string.settings_tracking_start), onDismiss, stringResource(R.string.save),
+        onConfirm = { parsed?.let(onSave) },
+        dismissText = stringResource(R.string.cancel), confirmEnabled = parsed != null,
+    ) {
+        DateField(text, { text = it }, stringResource(R.string.settings_tracking_start_date), errorText = stringResource(R.string.date_invalid))
+        Text(stringResource(R.string.settings_tracking_start_desc), style = DriftType.Label12, color = DriftColors.TextSecondary)
     }
 }
 

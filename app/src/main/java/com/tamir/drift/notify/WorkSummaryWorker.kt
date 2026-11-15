@@ -11,6 +11,7 @@ import com.tamir.drift.data.repo.toShiftSummaries
 import com.tamir.drift.data.repo.toSummaries
 import com.tamir.drift.data.repo.toSummary
 import com.tamir.drift.di.AppGraph
+import com.tamir.drift.domain.time.sinceStart
 import com.tamir.drift.domain.work.GoalCalculator
 import com.tamir.drift.domain.work.PayType
 import com.tamir.drift.ui.format.Fmt
@@ -44,13 +45,15 @@ class WorkSummaryWorker(appContext: Context, params: WorkerParameters) : Corouti
         val zone = ZoneId.systemDefault()
         val today = LocalDate.now(zone)
         val settings = graph.settings.current()
-        val shifts = graph.work.getShifts().toShiftSummaries()
-        val startDate = settings.trackingStartEpochDay?.let { LocalDate.ofEpochDay(it) }
+        // Tracking start: only shifts and transactions from it on feed the summary.
+        val window = settings.trackingWindow
+        val shifts = graph.work.getShifts().toShiftSummaries().sinceStart(window)
+        val startDate = window.startDate
         val week = GoalCalculator.weekStatus(shifts, today, settings.weeklyIncomeGoalAgorot, startDate)
         val jobs = graph.work.getJobs()
         val mainJob = (jobs.firstOrNull { it.isActive } ?: jobs.firstOrNull())?.toSummary()
         val month = GoalCalculator.monthStatus(
-            shifts, graph.db.transactions().getAll().toSummaries(), YearMonth.from(today), today, zone,
+            shifts, graph.db.transactions().getAll().toSummaries().sinceStart(window, zone), YearMonth.from(today), today, zone,
             settings.monthlySavingGoalAgorot, mainJob?.unitRateAgorot ?: 0L, startDate, mainJob?.payType ?: PayType.HOURLY,
         )
         val ctx = applicationContext

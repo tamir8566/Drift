@@ -9,6 +9,7 @@ import com.tamir.drift.data.repo.toShiftSummaries
 import com.tamir.drift.di.AppGraph
 import com.tamir.drift.domain.budget.CategorySpend
 import com.tamir.drift.domain.budget.MonthSummary
+import com.tamir.drift.domain.time.sinceStart
 import com.tamir.drift.domain.work.GoalCalculator
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -38,12 +39,16 @@ class HomeViewModel(graph: AppGraph) : ViewModel() {
         graph.categories.categories,
         graph.budgets.all,
         graph.work.shifts,
-    ) { txs, cats, budgets, shifts ->
+        graph.settings.settings,
+    ) { txs, cats, budgets, shifts, settings ->
         val month = YearMonth.now()
-        val summary = graph.monthSummary.build(txs, cats, budgets, month)
+        // Tracking start: totals, "השבוע" and "מול חודש קודם" only count records from it on
+        // (a previous month before the start has no spend → the existing "—").
+        val window = settings.trackingWindow
+        val summary = graph.monthSummary.build(txs, cats, budgets, month, window)
         val top = summary.categories.filter { it.spent > 0 }.take(4).ifEmpty { summary.categories.take(4) }
         // Budget math is untouched; the earned/saved row is purely additive.
-        val earned = Money.toShekels(GoalCalculator.earnedIn(shifts.toShiftSummaries(), month))
+        val earned = Money.toShekels(GoalCalculator.earnedIn(shifts.toShiftSummaries().sinceStart(window), month))
         HomeUiState(
             loading = false,
             month = month,

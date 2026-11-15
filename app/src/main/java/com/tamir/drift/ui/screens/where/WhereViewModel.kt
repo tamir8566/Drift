@@ -14,6 +14,7 @@ import com.tamir.drift.domain.insights.Subscription
 import com.tamir.drift.domain.insights.SubscriptionDetector
 import com.tamir.drift.domain.insights.TopMerchants
 import com.tamir.drift.domain.time.MonthPeriod
+import com.tamir.drift.domain.time.sinceStart
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -55,7 +56,9 @@ class WhereViewModel(private val graph: AppGraph, initialCategory: String?) : Vi
     ) { txs, cats, settings, p, hl ->
         val now = System.currentTimeMillis()
         val month = YearMonth.now(zone)
-        val summaries = txs.toSummaries()
+        // Tracking start: period totals, category breakdown, 6-month bars, top merchants,
+        // "where to save" and subscription detection (≥2 charges after the start) all use this list.
+        val summaries = txs.toSummaries().sinceStart(settings.trackingWindow, zone)
         val end = MonthPeriod(month, zone).endMillis
         val start = MonthPeriod(month.minusMonths((p.months - 1).toLong()), zone).startMillis
 

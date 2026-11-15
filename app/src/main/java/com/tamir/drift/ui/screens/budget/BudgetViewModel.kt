@@ -10,6 +10,7 @@ import com.tamir.drift.data.settings.Settings
 import com.tamir.drift.di.AppGraph
 import com.tamir.drift.domain.budget.MonthSummary
 import com.tamir.drift.domain.time.MonthPeriod
+import com.tamir.drift.domain.time.sinceStart
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -43,8 +44,10 @@ class BudgetViewModel(private val graph: AppGraph) : ViewModel() {
         graph.settings.settings,
     ) { txs, cats, budgets, settings ->
         val month = YearMonth.now(zone)
-        val summary = graph.monthSummary.build(txs, cats, budgets, month)
-        val summaries = txs.toSummaries()
+        // Tracking start: usage, category usage and history only count transactions from it on.
+        val window = settings.trackingWindow
+        val summary = graph.monthSummary.build(txs, cats, budgets, month, window)
+        val summaries = txs.toSummaries().sinceStart(window, zone)
         val firstMonth = summaries.minOfOrNull { it.timestamp }?.let { YearMonth.from(java.time.Instant.ofEpochMilli(it).atZone(zone)) }
         val history = buildList {
             var m = month.minusMonths(1)

@@ -191,6 +191,10 @@
     <string name="settings_weekly_desc">יום ושעה להתראת הסיכום</string>
     <string name="settings_weekly_enabled">סיכום שבועי פעיל</string>
     <string name="settings_time">שעה</string>
+    <string name="settings_tracking">מעקב</string>
+    <string name="settings_tracking_start">תחילת המעקב</string>
+    <string name="settings_tracking_start_desc">חישובים, השוואות ותובנות מתחילים מתאריך זה. הוצאות ומשמרות ישנות יותר נשמרות אבל לא נספרות.</string>
+    <string name="settings_tracking_start_date">תאריך (יום.חודש.שנה)</string>
     <string name="settings_tools">כלים</string>
     <string name="settings_calibration">כיול פענוח</string>
     <string name="settings_calibration_desc">הדבקת הודעה אמיתית ולימוד תבנית</string>

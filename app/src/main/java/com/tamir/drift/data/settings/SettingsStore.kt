@@ -11,6 +11,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.tamir.drift.BuildConfig
+import com.tamir.drift.domain.time.TrackingWindow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -37,14 +38,21 @@ data class Settings(
     val weeklyIncomeGoalAgorot: Long,
     /** Saturday 20:00 work summary ("סיכום שבוע: הרווחת X מתוך Y"). */
     val workSummaryEnabled: Boolean,
-    /** First day the goal tracking counts from (epoch day). Weeks/months before it are ignored. */
-    val trackingStartEpochDay: Long?,
+    /**
+     * App-wide tracking start (epoch day): every statistic, comparison, history, insight and goal
+     * counts records from this day on; older ones stay stored but are not counted.
+     * Default 1.12.2026 (November 2026 was a test month).
+     */
+    val trackingStartEpochDay: Long,
 ) {
+    val trackingWindow: TrackingWindow get() = TrackingWindow(trackingStartEpochDay)
+
     companion object {
         val DEFAULT_SMS_SENDERS = setOf("max", "MAX", "Max")
         val DEFAULT_PACKAGES = setOf("com.google.android.apps.walletnfcrel", "com.google.android.apps.nbu.paisa.user")
         const val DEFAULT_MONTHLY_SAVING_GOAL = 2_000_00L
         const val DEFAULT_WEEKLY_INCOME_GOAL = 1_200_00L
+        val DEFAULT_TRACKING_START_EPOCH_DAY: Long = TrackingWindow.DEFAULT_START_EPOCH_DAY
     }
 }
 
@@ -67,6 +75,8 @@ class SettingsStore(private val context: Context) {
         val weeklyIncomeGoal = longPreferencesKey("weekly_income_goal")
         val workSummaryEnabled = booleanPreferencesKey("work_summary_enabled")
         val trackingStart = longPreferencesKey("tracking_start_epoch_day")
+        /** One-time migration: installs from before the 1.12.2026 default get it applied once. */
+        val trackingStartV2Applied = booleanPreferencesKey("tracking_start_v2_applied")
     }
 
     val settings: Flow<Settings> = context.dataStore.data.map { p ->
@@ -85,7 +95,7 @@ class SettingsStore(private val context: Context) {
             monthlySavingGoalAgorot = p[Keys.monthlySavingGoal] ?: Settings.DEFAULT_MONTHLY_SAVING_GOAL,
             weeklyIncomeGoalAgorot = p[Keys.weeklyIncomeGoal] ?: Settings.DEFAULT_WEEKLY_INCOME_GOAL,
             workSummaryEnabled = p[Keys.workSummaryEnabled] ?: true,
-            trackingStartEpochDay = p[Keys.trackingStart],
+            trackingStartEpochDay = p[Keys.trackingStart] ?: Settings.DEFAULT_TRACKING_START_EPOCH_DAY,
         )
     }
 
@@ -106,8 +116,17 @@ class SettingsStore(private val context: Context) {
     suspend fun setWorkSummaryEnabled(v: Boolean) = context.dataStore.edit { it[Keys.workSummaryEnabled] = v }
     suspend fun setTrackingStart(epochDay: Long) = context.dataStore.edit { it[Keys.trackingStart] = epochDay }
 
-    /** Sets the tracking start to today on first launch, so weeks before the install never count. */
-    suspend fun ensureTrackingStart(todayEpochDay: Long) = context.dataStore.edit {
-        if (it[Keys.trackingStart] == null) it[Keys.trackingStart] = todayEpochDay
+    /**
+     * Called at startup. Makes sure the tracking start exists and, once per install, moves it to
+     * the 1.12.2026 default (earlier builds set it to the install day, which fell in the November
+     * test month). After the migration flag is set the user's own edits are never overridden.
+     */
+    suspend fun ensureTrackingStart() = context.dataStore.edit {
+        if (it[Keys.trackingStartV2Applied] != true) {
+            it[Keys.trackingStart] = Settings.DEFAULT_TRACKING_START_EPOCH_DAY
+            it[Keys.trackingStartV2Applied] = true
+        } else if (it[Keys.trackingStart] == null) {
+            it[Keys.trackingStart] = Settings.DEFAULT_TRACKING_START_EPOCH_DAY
+        }
     }
 }

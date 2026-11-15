@@ -11,6 +11,7 @@ import com.tamir.drift.data.repo.toSummaries
 import com.tamir.drift.di.AppGraph
 import com.tamir.drift.domain.insights.SavingsGoalCalculator
 import com.tamir.drift.domain.insights.SavingsGoalStatus
+import com.tamir.drift.domain.time.sinceStart
 import com.tamir.drift.domain.work.GoalCalculator
 import com.tamir.drift.domain.work.MonthGoalStatus
 import com.tamir.drift.domain.work.MonthSavingHistory
@@ -55,14 +56,17 @@ class GoalViewModel(private val graph: AppGraph) : ViewModel() {
     val state: StateFlow<GoalUiState> = combine(work, money) { (shifts, jobs, settings), (txs, goals, deposits) ->
         val today = LocalDate.now(zone)
         val month = YearMonth.from(today)
-        val shiftSummaries = shifts.toShiftSummaries()
-        val txSummaries = txs.toSummaries()
+        // Tracking start: month status, week carry-over, history and the long-term pace only
+        // count shifts and transactions from it on.
+        val window = settings.trackingWindow
+        val shiftSummaries = shifts.toShiftSummaries().sinceStart(window)
+        val txSummaries = txs.toSummaries().sinceStart(window, zone)
         // The main job: first active one (else the first). Its rate is per hour or per day by its pay type.
         val mainJob = (jobs.firstOrNull { it.isActive } ?: jobs.firstOrNull())?.toSummary()
         val mainRate = mainJob?.unitRateAgorot ?: 0L
         val mainPayType = mainJob?.payType ?: PayType.HOURLY
 
-        val startDate = settings.trackingStartEpochDay?.let { LocalDate.ofEpochDay(it) }
+        val startDate = window.startDate
         val status = GoalCalculator.monthStatus(
             shiftSummaries, txSummaries, month, today, zone, settings.monthlySavingGoalAgorot, mainRate, startDate, mainPayType,
         )

@@ -11,6 +11,7 @@ import com.tamir.drift.data.repo.toSummaries
 import com.tamir.drift.data.settings.Settings
 import com.tamir.drift.di.AppGraph
 import com.tamir.drift.domain.insights.WeeklySummaryCalculator
+import com.tamir.drift.domain.time.sinceStart
 import com.tamir.drift.ui.format.Fmt
 import java.time.DayOfWeek
 import java.time.Duration
@@ -46,8 +47,10 @@ class WeeklySummaryWorker(appContext: Context, params: WorkerParameters) : Corou
         val weekStart = weekEnd - TimeUnit.DAYS.toMillis(7)
         val all = graph.db.transactions().getAll()
         val month = YearMonth.from(now)
-        val summary = graph.monthSummary.build(all, graph.db.categories().getAll(), graph.db.budgets().getAll(), month)
-        val weekly = WeeklySummaryCalculator.calculate(all.toSummaries(), weekStart, weekEnd, summary.spent, summary.totalBudget)
+        // Tracking start: the week's spend and the month figures only count transactions from it on.
+        val window = settings.trackingWindow
+        val summary = graph.monthSummary.build(all, graph.db.categories().getAll(), graph.db.budgets().getAll(), month, window)
+        val weekly = WeeklySummaryCalculator.calculate(all.toSummaries().sinceStart(window, zone), weekStart, weekEnd, summary.spent, summary.totalBudget)
         val ctx = applicationContext
         val categoryName = weekly.topCategoryKey?.let { key -> graph.db.categories().getById(key)?.name }
         val budgetLine = if (summary.remaining >= 0) {
