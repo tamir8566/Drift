@@ -44,8 +44,18 @@ data class Settings(
      * Default 1.12.2026 (November 2026 was a test month).
      */
     val trackingStartEpochDay: Long,
+    /** The day the app was first used (epoch day). Before the tracking start, statistics count from here. */
+    val firstLaunchEpochDay: Long,
 ) {
-    val trackingWindow: TrackingWindow get() = TrackingWindow(trackingStartEpochDay)
+    /**
+     * The window statistics use right now. Until the tracking start arrives, everything since the
+     * first launch counts (so the trial month is visible while it is the current month); from the
+     * tracking start on, only records from that day count.
+     */
+    val trackingWindow: TrackingWindow get() {
+        val today = java.time.LocalDate.now().toEpochDay()
+        return if (today < trackingStartEpochDay) TrackingWindow(firstLaunchEpochDay) else TrackingWindow(trackingStartEpochDay)
+    }
 
     companion object {
         val DEFAULT_SMS_SENDERS = setOf("max", "MAX", "Max")
@@ -53,6 +63,8 @@ data class Settings(
         const val DEFAULT_MONTHLY_SAVING_GOAL = 2_000_00L
         const val DEFAULT_WEEKLY_INCOME_GOAL = 1_200_00L
         val DEFAULT_TRACKING_START_EPOCH_DAY: Long = TrackingWindow.DEFAULT_START_EPOCH_DAY
+        /** Installs that predate the first-launch key started using the app on 8.11.2026. */
+        val LEGACY_FIRST_LAUNCH_EPOCH_DAY: Long = java.time.LocalDate.of(2026, 11, 8).toEpochDay()
     }
 }
 
@@ -77,6 +89,7 @@ class SettingsStore(private val context: Context) {
         val trackingStart = longPreferencesKey("tracking_start_epoch_day")
         /** One-time migration: installs from before the 1.12.2026 default get it applied once. */
         val trackingStartV2Applied = booleanPreferencesKey("tracking_start_v2_applied")
+        val firstLaunch = longPreferencesKey("first_launch_epoch_day")
     }
 
     val settings: Flow<Settings> = context.dataStore.data.map { p ->
@@ -96,6 +109,7 @@ class SettingsStore(private val context: Context) {
             weeklyIncomeGoalAgorot = p[Keys.weeklyIncomeGoal] ?: Settings.DEFAULT_WEEKLY_INCOME_GOAL,
             workSummaryEnabled = p[Keys.workSummaryEnabled] ?: true,
             trackingStartEpochDay = p[Keys.trackingStart] ?: Settings.DEFAULT_TRACKING_START_EPOCH_DAY,
+            firstLaunchEpochDay = p[Keys.firstLaunch] ?: Settings.LEGACY_FIRST_LAUNCH_EPOCH_DAY,
         )
     }
 
@@ -122,6 +136,12 @@ class SettingsStore(private val context: Context) {
      * test month). After the migration flag is set the user's own edits are never overridden.
      */
     suspend fun ensureTrackingStart() = context.dataStore.edit {
+        if (it[Keys.firstLaunch] == null) {
+            // Installs from before this key existed were first used on 8.11.2026 (the v2 flag was
+            // already set for them); anything newer starts counting today.
+            val today = java.time.LocalDate.now().toEpochDay()
+            it[Keys.firstLaunch] = if (it[Keys.trackingStartV2Applied] == true || today <= Settings.DEFAULT_TRACKING_START_EPOCH_DAY) Settings.LEGACY_FIRST_LAUNCH_EPOCH_DAY else today
+        }
         if (it[Keys.trackingStartV2Applied] != true) {
             it[Keys.trackingStart] = Settings.DEFAULT_TRACKING_START_EPOCH_DAY
             it[Keys.trackingStartV2Applied] = true
