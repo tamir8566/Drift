@@ -8,9 +8,12 @@ import androidx.lifecycle.viewModelScope
 import com.tamir.drift.R
 import com.tamir.drift.data.db.CategoryEntity
 import com.tamir.drift.data.db.TransactionEntity
+import com.tamir.drift.data.db.netMineAgorot
+import com.tamir.drift.data.db.txnKind
 import com.tamir.drift.data.repo.toSummary
 import com.tamir.drift.di.AppGraph
 import com.tamir.drift.domain.export.CsvBuilder
+import com.tamir.drift.domain.model.TxnKind
 import com.tamir.drift.domain.time.MonthPeriod
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -23,9 +26,11 @@ import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
 
+/** [total]: the day's net spend, agorot — my share of expenses minus refunds; transfers are not counted. */
 data class DayGroup(val date: LocalDate, val items: List<TransactionEntity>, val total: Long)
 
-data class TxFilter(val category: String? = null, val month: YearMonth? = null, val query: String = "")
+/** [unparsedOnly]: show only what could not be parsed (opened from the home attention row). */
+data class TxFilter(val category: String? = null, val month: YearMonth? = null, val query: String = "", val unparsedOnly: Boolean = false)
 
 data class AllTxUiState(
     val filter: TxFilter = TxFilter(),
@@ -37,11 +42,20 @@ data class AllTxUiState(
     val count: Int = 0,
 )
 
-class AllTransactionsViewModel(private val graph: AppGraph, initialCategory: String?, initialMonth: String?) : ViewModel() {
+class AllTransactionsViewModel(
+    private val graph: AppGraph,
+    initialCategory: String?,
+    initialMonth: String?,
+    initialUnparsedOnly: Boolean = false,
+) : ViewModel() {
 
     private val zone = ZoneId.systemDefault()
     private val filter = MutableStateFlow(
-        TxFilter(category = initialCategory, month = initialMonth?.let { runCatching { YearMonth.parse(it) }.getOrNull() }),
+        TxFilter(
+            category = initialCategory,
+            month = initialMonth?.let { runCatching { YearMonth.parse(it) }.getOrNull() },
+            unparsedOnly = initialUnparsedOnly,
+        ),
     )
 
     val state: StateFlow<AllTxUiState> = combine(graph.transactions.all, graph.categories.categories, filter) { txs, cats, f ->
@@ -53,10 +67,11 @@ class AllTransactionsViewModel(private val graph: AppGraph, initialCategory: Str
                 (q.isEmpty() || t.merchant.lowercase().contains(q) || (t.note?.lowercase()?.contains(q) ?: false) || (t.rawText?.lowercase()?.contains(q) ?: false))
         }
         val unparsed = filtered.filter { it.isUnparsed }.sortedByDescending { it.timestamp }
-        val groups = filtered.filter { !it.isUnparsed }
+        val parsed = if (f.unparsedOnly) emptyList() else filtered.filter { !it.isUnparsed }
+        val groups = parsed
             .groupBy { Instant.ofEpochMilli(it.timestamp).atZone(zone).toLocalDate() }
             .toSortedMap(compareByDescending<LocalDate> { it })
-            .map { (date, list) -> DayGroup(date, list.sortedByDescending { it.timestamp }, list.sumOf { it.amountMine }) }
+            .map { (date, list) -> DayGroup(date, list.sortedByDescending { it.timestamp }, list.sumOf { it.netMineAgorot }) }
         AllTxUiState(
             filter = f,
             categories = cats.associateBy { it.id },
@@ -64,23 +79,33 @@ class AllTransactionsViewModel(private val graph: AppGraph, initialCategory: Str
             availableMonths = months,
             unparsed = unparsed,
             groups = groups,
-            count = filtered.size,
+            count = unparsed.size + parsed.size,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AllTxUiState(filter = filter.value))
 
     fun setQuery(q: String) { filter.value = filter.value.copy(query = q) }
     fun setCategory(c: String?) { filter.value = filter.value.copy(category = c) }
     fun setMonth(m: YearMonth?) { filter.value = filter.value.copy(month = m) }
+    fun setUnparsedOnly(v: Boolean) { filter.value = filter.value.copy(unparsedOnly = v) }
 
     /** PRD: monthly CSV export, shared through the system share sheet. */
     suspend fun exportCsv(context: Context, month: YearMonth, categoryNames: Map<String, String>): Intent {
         val period = MonthPeriod(month, zone)
         val rows = graph.transactions.getAll()
             .filter { !it.isUnparsed && period.contains(it.timestamp) }
-            .map { t -> CsvBuilder.Row(t.toSummary(), categoryNames[t.categoryId] ?: t.categoryId, t.note) }
+            .map { t ->
+                val kindLabel = context.getString(
+                    when (t.txnKind) {
+                        TxnKind.EXPENSE -> R.string.kind_expense
+                        TxnKind.REFUND -> R.string.kind_refund
+                        TxnKind.TRANSFER -> R.string.kind_transfer
+                    },
+                )
+                CsvBuilder.Row(t.toSummary(), categoryNames[t.categoryId] ?: t.categoryId, t.note, kindLabel)
+            }
         val headers = listOf(
             R.string.csv_date, R.string.csv_merchant, R.string.csv_category, R.string.csv_amount_full,
-            R.string.csv_amount_mine, R.string.csv_shared, R.string.csv_source, R.string.csv_note,
+            R.string.csv_amount_mine, R.string.csv_shared, R.string.csv_source, R.string.csv_kind, R.string.csv_note,
         ).map { context.getString(it) }
         val csv = CsvBuilder.build(rows, headers, zone)
         val dir = File(context.cacheDir, "exports").apply { mkdirs() }

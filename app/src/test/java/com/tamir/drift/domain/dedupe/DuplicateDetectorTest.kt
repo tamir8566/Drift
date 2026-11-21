@@ -23,6 +23,23 @@ class DuplicateDetectorTest {
     }
 
     @Test
+    fun `a refund is never a duplicate of the purchase it cancels`() {
+        val existing = listOf(stored(89.9, t0))
+        val refund = DuplicateDetector.Candidate(89.9, t0 + 5 * 60_000, TransactionSource.SMS, "WOLT", com.tamir.drift.domain.model.TxnKind.REFUND)
+        assertNull(detector.findDuplicate(refund, existing))
+        val storedRefund = stored(89.9, t0).copy(kind = com.tamir.drift.domain.model.TxnKind.REFUND)
+        assertEquals(1L, detector.findDuplicate(refund, listOf(storedRefund))?.id)
+    }
+
+    @Test
+    fun `same source needs the same merchant key`() {
+        val existing = listOf(stored(89.9, t0, merchant = "Wolt 12"))
+        assertEquals(1L, detector.findDuplicate(DuplicateDetector.Candidate(89.9, t0 + 60_000, TransactionSource.GPAY, "WOLT"), existing)?.id)
+        assertNull(detector.findDuplicate(DuplicateDetector.Candidate(89.9, t0 + 60_000, TransactionSource.GPAY, "Wolt Market"), existing))
+        assertNull(detector.findDuplicate(DuplicateDetector.Candidate(89.9, t0 + 60_000, TransactionSource.GPAY, null), existing))
+    }
+
+    @Test
     fun `outside the window is not a duplicate`() {
         val existing = listOf(stored(89.9, t0))
         val c = DuplicateDetector.Candidate(89.9, t0 + 11 * 60_000, TransactionSource.SMS, "WOLT")

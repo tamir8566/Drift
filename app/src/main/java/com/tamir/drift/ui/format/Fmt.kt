@@ -3,6 +3,9 @@ package com.tamir.drift.ui.format
 import android.content.Context
 import com.tamir.drift.R
 import com.tamir.drift.data.repo.Money
+import com.tamir.drift.domain.format.BarValue
+import com.tamir.drift.domain.money.Currencies
+import com.tamir.drift.domain.money.MoneyText
 import java.text.DecimalFormat
 import java.text.DecimalFormatSymbols
 import java.time.DayOfWeek
@@ -30,8 +33,25 @@ object Fmt {
 
     fun moneyAgorot(agorot: Long): String = money(Money.toShekels(agorot))
 
-    /** "43%" */
-    fun percent(value: Double): String = "${value.roundToInt()}%"
+    /**
+     * Signed whole shekels for a right-to-left screen: "1,200" / "−1,200" — a real minus kept in
+     * front of the digits (see [MoneyText]). Use wherever a value may be negative.
+     */
+    fun signedMoney(shekels: Double): String = MoneyText.signed(shekels.roundToLong())
+
+    fun signedMoneyAgorot(agorot: Long): String = signedMoney(Money.toShekels(agorot))
+
+    /** "43%" / "−12%" (the minus stays in front of the digits). */
+    fun percent(value: Double): String = MoneyText.signedPercent(value.roundToInt())
+
+    /** The percent a bar prints — the same [BarValue] the bar draws its fraction from. */
+    fun percent(bar: BarValue): String = MoneyText.signedPercent(bar.percent)
+
+    /** An original foreign amount with its sign: "$12.99" / "€9" (kept left-to-right inside Hebrew text). */
+    fun foreign(amountMinor: Long, currency: String?): String = "\u200E" + Currencies.symbol(currency) + moneyExact(amountMinor)
+
+    /** Text for an amount field: plain digits without grouping ("1200" / "1200.5"). */
+    fun fieldAmount(agorot: Long): String = moneyExact(agorot).replace(",", "")
 
     /** "↓ 8%" / "↑ 12%" (arrows are plain text characters, not emoji). */
     fun change(percent: Double): String {

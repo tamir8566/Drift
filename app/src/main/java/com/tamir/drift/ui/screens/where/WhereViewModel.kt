@@ -63,8 +63,12 @@ class WhereViewModel(private val graph: AppGraph, initialCategory: String?) : Vi
         val start = MonthPeriod(month.minusMonths((p.months - 1).toLong()), zone).startMillis
 
         val byCat = MonthHistory.categoryTotals(summaries, start, end)
+        // The total is net (refunds subtracted). The slices are the categories that cost money;
+        // their fractions are taken over their own sum, so the segmented bar and the percents
+        // next to the rows always describe the same 100%.
         val total = byCat.values.sum()
-        val slices = cats.map { c -> CategorySlice(c.id, byCat[c.id] ?: 0.0, if (total > 0) (byCat[c.id] ?: 0.0) / total else 0.0) }
+        val positive = cats.sumOf { c -> (byCat[c.id] ?: 0.0).coerceAtLeast(0.0) }
+        val slices = cats.map { c -> CategorySlice(c.id, byCat[c.id] ?: 0.0, if (positive > 0) (byCat[c.id] ?: 0.0) / positive else 0.0) }
             .filter { it.amount > 0 }
             .sortedByDescending { it.amount }
 

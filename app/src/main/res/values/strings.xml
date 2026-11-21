@@ -106,7 +106,7 @@
 
     <!-- Savings -->
     <string name="savings_new_goal">יעד חדש</string>
-    <string name="savings_no_goals">אין עדיין יעדים. הוסיפו יעד עם שם, סכום ותאריך.</string>
+    <string name="savings_no_goals">אין עדיין יעדים. הוסף יעד עם שם, סכום ותאריך.</string>
     <string name="savings_needed_per_month">נדרש בחודש</string>
     <string name="savings_on_track">במסלול</string>
     <string name="savings_off_track">הקצב לא מספיק</string>
@@ -141,7 +141,7 @@
     <string name="detail_delete_confirm">למחוק את ההוצאה?</string>
     <string name="detail_not_found">ההוצאה לא נמצאה</string>
     <string name="detail_full_amount">סכום מלא</string>
-    <string name="detail_complete_unparsed">השלימו סכום ובית עסק כדי שההוצאה תיכנס לחישובים</string>
+    <string name="detail_complete_unparsed">השלם סכום ובית עסק כדי שההוצאה תיכנס לחישובים</string>
 
     <!-- All transactions -->
     <string name="tx_title">כל ההוצאות</string>
@@ -152,7 +152,7 @@
     <string name="tx_all_months">כל החודשים</string>
     <string name="tx_export_csv">ייצוא CSV</string>
     <string name="tx_export_title">ייצוא הוצאות</string>
-    <string name="tx_export_choose_month">בחרו חודש לייצוא מתוך הסינון</string>
+    <string name="tx_export_choose_month">בחר חודש לייצוא מתוך הסינון</string>
     <string name="tx_unparsed_section">לא פוענח</string>
     <string name="tx_none_found">לא נמצאו הוצאות</string>
     <string name="tx_count">%1$d הוצאות</string>
@@ -223,7 +223,7 @@
     <!-- Calibration -->
     <string name="calib_title">כיול פענוח</string>
     <string name="calib_source">מקור</string>
-    <string name="calib_paste_hint">הדביקו כאן את טקסט ההודעה או ההתראה</string>
+    <string name="calib_paste_hint">הדבק כאן את טקסט ההודעה או ההתראה</string>
     <string name="calib_example">היי, ביקשת שנעדכן אותך על כל עסקת אינטרנט: היום 05/11 בית עסק\nפז אפליקציית יילו\nחייב את כרטיסך 1234 בסך 216.79 שח\nכדאי לעקוב אחר החיובים כאן:\nhttps://link.max.co.il/5f093cf</string>
     <string name="calib_parse_result">תוצאת הפענוח</string>
     <string name="calib_parsed_amount">סכום: %1$s</string>
@@ -232,7 +232,7 @@
     <string name="calib_parser">מפענח: %1$s</string>
     <string name="calib_mark_amount">סימון הסכום</string>
     <string name="calib_mark_merchant">סימון בית העסק</string>
-    <string name="calib_mark_hint">סמנו את הטקסט בשדה למעלה ואז לחצו</string>
+    <string name="calib_mark_hint">סמן את הטקסט בשדה למעלה ואז לחץ</string>
     <string name="calib_marked_amount">סכום מסומן: %1$s</string>
     <string name="calib_marked_merchant">בית עסק מסומן: %1$s</string>
     <string name="calib_save_pattern">שמירת תבנית</string>
@@ -245,9 +245,14 @@
 
     <!-- Debug log -->
     <string name="debug_title">יומן ניפוי</string>
-    <string name="debug_empty">עדיין לא נקלט כלום. ודאו שההרשאות פעילות.</string>
+    <string name="debug_empty">עדיין לא נקלט כלום. ודא שההרשאות פעילות.</string>
     <string name="debug_result">תוצאה: %1$s</string>
-    <string name="debug_linked">הוצאה מספר %1$d</string>
+    <string name="debug_result_parsed">פוענח</string>
+    <string name="debug_result_refund">פוענח כזיכוי</string>
+    <string name="debug_result_duplicate">כפילות</string>
+    <string name="debug_result_unparsed">לא פוענח</string>
+    <string name="debug_result_failed">נכשל</string>
+    <string name="debug_linked_open">לפתיחת ההוצאה</string>
 
     <!-- Notifications -->
     <string name="channel_budget">התראות תקציב</string>
@@ -272,6 +277,9 @@
     <string name="update_now">עדכן עכשיו</string>
     <string name="update_later">אחר כך</string>
     <string name="update_downloading">מוריד… %1$d%%</string>
+    <string name="update_downloading_unknown">מוריד…</string>
+    <string name="update_downloading_size">מוריד… %1$s מ״ב</string>
+    <string name="update_notes_fallback">שיפורים ותיקונים</string>
     <string name="update_failed">ההורדה נכשלה: %1$s</string>
     <string name="update_need_permission">כדי להתקין עדכון צריך לאשר התקנה ממקור לא ידוע</string>
 
@@ -288,14 +296,14 @@
     <string name="work_this_week">השבוע</string>
     <string name="work_hours_month">שעות החודש</string>
     <string name="work_hours_value">%1$s שע׳</string>
-    <string name="work_calendar_hint">לחיצה על יום מסמנת או מבטלת יום עבודה מתוכנן</string>
+    <string name="work_calendar_hint">לחיצה על יום עם משמרת פותחת אותה · יום בלי משמרת מסומן או מבוטל כיום עבודה מתוכנן</string>
     <string name="work_legend_worked">עבדתי</string>
     <string name="work_legend_planned">מתוכנן</string>
     <string name="work_prev_month">חודש קודם</string>
     <string name="work_next_month">חודש הבא</string>
     <string name="work_by_job">לפי עבודה</string>
-    <string name="work_job_card_meta">%1$s שע׳ · השבוע %2$s ₪</string>
-    <string name="work_job_card_meta_daily">%1$d ימים · השבוע %2$s ₪</string>
+    <string name="work_job_card_meta">%1$s שע׳ החודש</string>
+    <string name="work_job_card_meta_daily">%1$d ימים החודש</string>
     <string name="work_shift_day">יום</string>
     <string name="work_no_jobs">אין עדיין עבודות</string>
     <string name="work_recent_shifts">משמרות אחרונות</string>
@@ -373,9 +381,9 @@
     <string name="goal_week_income">הכנסת השבוע</string>
     <string name="goal_week_surplus">אתה בפלוס %1$s ₪ — שבוע הבא אפשר להרוויח %1$s ₪ פחות</string>
     <string name="goal_week_deficit">חסרים %1$s ₪ — שבוע הבא צריך %1$s ₪ יותר</string>
-    <string name="goal_week_even">בדיוק ביעד השבועי</string>
-    <string name="goal_week_carry_plus">נגרר משבועות קודמים החודש: +%1$s ₪</string>
-    <string name="goal_week_carry_minus">נגרר משבועות קודמים החודש: −%1$s ₪</string>
+    <string name="goal_week_even">בדיוק ביעד של השבוע</string>
+    <string name="goal_week_carry_plus">יעד שבועי %1$s ₪ פחות עודף של %2$s ₪ משבועות קודמים החודש: %3$s ₪</string>
+    <string name="goal_week_carry_minus">יעד שבועי %1$s ₪ ועוד %2$s ₪ שחסרו בשבועות קודמים החודש: %3$s ₪</string>
     <string name="goal_week_reset_note">האיזון מתאפס בתחילת כל חודש</string>
     <string name="goal_recommendation">כדי לעמוד ביעד החודש: עוד %1$d שעות עבודה, או לצמצם הוצאות ב־%2$s ₪</string>
     <string name="goal_recommendation_days">כדי לעמוד ביעד החודש: עוד %1$d ימי עבודה, או לצמצם הוצאות ב־%2$s ₪</string>
@@ -397,6 +405,75 @@
     <string name="settings_budget_screen_desc">תקציב כולל, תקציב לקטגוריה והתראות</string>
     <string name="work_summary_title">סיכום שבוע</string>
     <string name="work_summary_text">הרווחת %1$s מתוך %2$s ₪ · %3$s</string>
+
+    <!-- Correctness round (batch A) -->
+    <string name="work_shifts_month">משמרות החודש</string>
+    <string name="work_job_deleted">עבודה שנמחקה</string>
+    <string name="work_all_shifts">כל המשמרות</string>
+    <string name="work_all_shifts_count">כל המשמרות (%1$d)</string>
+    <string name="work_month_group_total">%1$d משמרות · %2$s ₪</string>
+    <string name="work_job_card_week">השבוע %1$s מתוך יעד שבועי %2$s ₪</string>
+    <string name="work_job_main">עבודה ראשית</string>
+    <string name="work_job_main_desc">לפי התעריף שלה מחושבות שעות העבודה שחסרות ליעד. רק עבודה אחת היא הראשית.</string>
+    <string name="work_job_main_tag">ראשית</string>
+    <string name="work_job_below_minimum">מתחת לשכר המינימום לשעה (%1$s ₪ נכון ל%2$s)</string>
+    <string name="shift_rate_kept">מחושב לפי התעריף שנשמר למשמרת. שינוי שעות או עבודה יעבור לתעריף הנוכחי.</string>
+
+    <string name="two_employers_title">שני מעסיקים</string>
+    <string name="two_employers_title_year">שני מעסיקים · %1$d</string>
+    <string name="two_employers_dismiss">הסתרה</string>
+    <string name="two_employers_tax">עשיתי תיאום מס</string>
+    <string name="two_employers_tax_desc">בלי תיאום, מעסיק שני מנכה בדרך כלל מס הכנסה בשיעור המרבי. התיאום נעשה באתר רשות המסים ותקף לשנת מס אחת.</string>
+    <string name="two_employers_insurance">עשיתי תיאום דמי ביטוח לאומי</string>
+    <string name="two_employers_insurance_desc">בלי תיאום, מעסיק שני מנכה בדרך כלל דמי ביטוח לאומי בשיעור המלא. התיאום נעשה באתר הביטוח הלאומי ותקף לשנת מס אחת.</string>
+    <string name="two_employers_new_year">שנה חדשה — צריך לחדש תיאום מס</string>
+
+    <string name="home_unparsed_one">הוצאה אחת לא פוענחה</string>
+    <string name="home_unparsed_many">%1$d הוצאות לא פוענחו</string>
+    <string name="home_unparsed_action">להשלים</string>
+    <string name="home_capture_off">הקליטה האוטומטית כבויה</string>
+    <string name="home_sms_off">קליטת המסרונים ממקס כבויה</string>
+    <string name="home_capture_action">להפעיל</string>
+    <string name="home_earned_short">הרווחת החודש %1$s ₪ · בחוסר %2$s ₪</string>
+    <string name="category_share_of_total">מסך ההוצאות</string>
+    <string name="budget_share_of_total">%1$s מסך ההוצאות</string>
+
+    <string name="goal_short_month">בחוסר החודש</string>
+    <string name="goal_short_of_goal">בחוסר %1$s ₪ · היעד %2$s ₪</string>
+    <string name="goal_week_covered">העודף משבועות קודמים מכסה את היעד של השבוע</string>
+    <string name="goal_week_pct_adjusted">%1$s מהיעד של השבוע (אחרי גרירה משבועות קודמים)</string>
+    <string name="goal_week_pct_plain">%1$s מהיעד השבועי</string>
+
+    <string name="kind_expense">הוצאה</string>
+    <string name="kind_refund">זיכוי</string>
+    <string name="kind_transfer">לא נספר</string>
+    <string name="kind_refund_desc">זיכוי מופחת מסך ההוצאות ומהקטגוריה שלו</string>
+    <string name="kind_transfer_desc">לא נספר בתקציב, בקטגוריות, בתובנות וביעד</string>
+    <string name="csv_kind">סוג</string>
+    <string name="detail_time">שעה</string>
+    <string name="detail_original_amount">סכום מקורי</string>
+    <string name="detail_estimate_hint">≈ הערכה לפי שערי המטבע שבהגדרות. הקלד את הסכום הסופי בשקלים.</string>
+    <string name="detail_estimate_confirm">הסכום הזה סופי</string>
+    <string name="recat_message_one">עודכנה הוצאה אחת נוספת של %1$s</string>
+    <string name="recat_message_many">עודכנו %1$d הוצאות של %2$s</string>
+    <string name="tx_unparsed_only">רק לא פוענחו</string>
+    <string name="tx_unparsed_only_hint">לחיצה מציגה את כל ההוצאות</string>
+
+    <string name="channel_reminders">תזכורות</string>
+    <string name="channel_reminders_desc">בדיקת הקליטה האוטומטית ותזכורות שקטות</string>
+    <string name="watchdog_title">קליטה אוטומטית</string>
+    <string name="watchdog_text_days">לא נקלטו הוצאות כבר %1$d ימים — כדאי לבדוק הרשאות</string>
+    <string name="watchdog_text_one_day">לא נקלטו הוצאות כבר יום — כדאי לבדוק הרשאות</string>
+    <string name="watchdog_text_off">הקליטה האוטומטית כבויה — כדאי לבדוק הרשאות</string>
+    <string name="settings_watchdog">התראה כשהקליטה נעצרת</string>
+    <string name="settings_watchdog_desc">בדיקה יומית שקטה: הגישה להתראות כבויה, או כמה ימים בלי אף הוצאה שנקלטה</string>
+    <string name="settings_fx">שערי מטבע</string>
+    <string name="settings_fx_rate">%1$s ₪ ליחידה</string>
+    <string name="settings_fx_field">שער בשקלים ליחידה אחת</string>
+    <string name="settings_fx_desc">השערים כאן הם ערכי פתיחה משוערים ואינם מתעדכנים מהרשת — עדכן אותם מדי פעם. הם משמשים רק להערכה (≈) של קנייה במטבע זר, עד שתקליד את הסכום הסופי בשקלים.</string>
+    <string name="fx_usd">דולר ($)</string>
+    <string name="fx_eur">אירו (€)</string>
+    <string name="fx_gbp">לירה שטרלינג (£)</string>
 
     <string-array name="day_initials">
         <item>א</item><item>ב</item><item>ג</item><item>ד</item><item>ה</item><item>ו</item><item>ש</item>

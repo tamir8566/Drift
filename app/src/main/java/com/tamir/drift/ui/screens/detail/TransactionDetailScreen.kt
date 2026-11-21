@@ -1,5 +1,6 @@
 package com.tamir.drift.ui.screens.detail
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -21,6 +23,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -28,7 +32,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tamir.drift.R
 import com.tamir.drift.data.db.TransactionEntity
+import com.tamir.drift.data.db.txnKind
 import com.tamir.drift.data.repo.Money
+import com.tamir.drift.domain.model.TxnKind
+import com.tamir.drift.domain.money.AmountInput
 import com.tamir.drift.ui.LocalAppGraph
 import com.tamir.drift.ui.components.ChoiceRow
 import com.tamir.drift.ui.components.DateField
@@ -54,10 +61,16 @@ import java.time.ZoneId
 /**
  * PRD "פרטי הוצאה": all fields, "with friends" switch revealing "how much I actually paid",
  * raw text; changing category teaches a rule; delete.
+ *
+ * Kind: "הוצאה / זיכוי / לא נספר" — a refund is subtracted from the spend, "לא נספר" (a transfer)
+ * is left out of every calculation. A foreign charge shows its original amount; its shekel amount
+ * is an estimate ("≈") until the user types the final one or confirms it.
+ * When a category change also moved other expenses of the same merchant, the user is told how many.
  */
 @Composable
 fun TransactionDetailScreen(id: Long, onBack: () -> Unit) {
     val graph = LocalAppGraph.current
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val tx by graph.transactions.observe(id).collectAsStateWithLifecycle(initialValue = null)
     val categories by graph.categories.categories.collectAsStateWithLifecycle(initialValue = emptyList())
@@ -74,8 +87,14 @@ fun TransactionDetailScreen(id: Long, onBack: () -> Unit) {
         scope.launch { graph.transactions.delete(id); onBack() }
     }, onSave = { updated, categoryChanged ->
         scope.launch {
-            if (categoryChanged) graph.transactions.recategorize(updated, updated.categoryId)
-            else graph.transactions.update(updated)
+            if (categoryChanged) {
+                // The same merchant's other expenses follow the new category — say so, with the number.
+                val moved = graph.transactions.recategorize(updated, updated.categoryId)
+                if (moved == 1) graph.showMessage(context.getString(R.string.recat_message_one, updated.merchant))
+                else if (moved > 1) graph.showMessage(context.getString(R.string.recat_message_many, moved, updated.merchant))
+            } else {
+                graph.transactions.update(updated)
+            }
             graph.alertChecker.checkAndNotify()
             onBack()
         }
@@ -91,20 +110,27 @@ private fun DetailForm(
     onSave: (TransactionEntity, Boolean) -> Unit,
 ) {
     val zone = ZoneId.systemDefault()
-    var amount by remember(tx.id) { mutableStateOf(if (tx.isUnparsed) "" else Fmt.moneyExact(tx.amountFull).replace(",", "")) }
+    val initialAmount = remember(tx.id) { if (tx.isUnparsed) "" else Fmt.fieldAmount(tx.amountFull) }
+    var amount by remember(tx.id) { mutableStateOf(initialAmount) }
+    var kind by remember(tx.id) { mutableStateOf(tx.txnKind) }
+    // The shekel amount of a foreign charge stays an estimate until it is typed over or confirmed.
+    var estimateConfirmed by remember(tx.id) { mutableStateOf(false) }
+    val stillEstimate = tx.isEstimate && !estimateConfirmed && amount == initialAmount
     var merchant by remember(tx.id) { mutableStateOf(tx.merchant) }
     var categoryId by remember(tx.id) { mutableStateOf(tx.categoryId) }
     var date by remember(tx.id) { mutableStateOf(Instant.ofEpochMilli(tx.timestamp).atZone(zone).toLocalDate().toFieldText()) }
     var note by remember(tx.id) { mutableStateOf(tx.note.orEmpty()) }
     var shared by remember(tx.id) { mutableStateOf(tx.isShared) }
-    var mine by remember(tx.id) { mutableStateOf(if (tx.isShared) Fmt.moneyExact(tx.amountMine).replace(",", "") else "") }
+    var mine by remember(tx.id) { mutableStateOf(if (tx.isShared) Fmt.fieldAmount(tx.amountMine) else "") }
     var confirmDelete by remember { mutableStateOf(false) }
 
-    val amountValue = amount.replace(",", "").toDoubleOrNull()
-    val mineValue = mine.replace(",", "").toDoubleOrNull()
+    val amountValue = AmountInput.parse(amount)
+    val mineValue = AmountInput.parse(mine)
     val dateValue = parseDate(date)
     val amountOk = amountValue != null && amountValue > 0
     val shareOk = !shared || (mineValue != null && mineValue >= 0 && amountValue != null && mineValue <= amountValue)
+    // An empty "my share" is simply not filled in yet — no error until something was typed.
+    val shareError = shared && mine.isNotBlank() && !shareOk
     val valid = amountOk && shareOk && dateValue != null
 
     Column(
@@ -134,17 +160,53 @@ private fun DetailForm(
                         Text(stringResource(R.string.detail_card_last4, tx.cardLast4), style = DriftType.Label12, color = DriftColors.Text)
                     }
                 }
+                // The date itself is the editable field below; only the clock time is shown here.
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(stringResource(R.string.add_date), style = DriftType.Label12, color = DriftColors.TextSecondary)
-                    Text("${Fmt.shortDate(tx.timestamp)} · ${Fmt.time(tx.timestamp)}", style = DriftType.Label12, color = DriftColors.Text)
+                    Text(stringResource(R.string.detail_time), style = DriftType.Label12, color = DriftColors.TextSecondary)
+                    Text(Fmt.time(tx.timestamp), style = DriftType.Label12, color = DriftColors.Text)
+                }
+                val origAmount = tx.origAmountMinor
+                if (origAmount != null && tx.origCurrency != null) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(stringResource(R.string.detail_original_amount), style = DriftType.Label12, color = DriftColors.TextSecondary)
+                        Text(Fmt.foreign(origAmount, tx.origCurrency), style = DriftType.Label12, color = DriftColors.Text)
+                    }
                 }
             }
         }
 
+        // Kind: an expense counts, a refund is subtracted, "לא נספר" is left out of everything.
+        ChoiceRow(
+            options = listOf(
+                TxnKind.EXPENSE.name to stringResource(R.string.kind_expense),
+                TxnKind.REFUND.name to stringResource(R.string.kind_refund),
+                TxnKind.TRANSFER.name to stringResource(R.string.kind_transfer),
+            ),
+            selected = kind.name,
+            onSelect = { kind = TxnKind.from(it) },
+        )
+        if (kind != TxnKind.EXPENSE) {
+            Text(
+                stringResource(if (kind == TxnKind.REFUND) R.string.kind_refund_desc else R.string.kind_transfer_desc),
+                style = DriftType.Label11, color = DriftColors.TextSecondary,
+            )
+        }
+
         DriftTextField(
             amount, { amount = it }, stringResource(R.string.detail_full_amount), keyboardType = KeyboardType.Decimal,
-            isError = amount.isNotBlank() && !amountOk, supporting = if (amount.isNotBlank() && !amountOk) stringResource(R.string.add_invalid_amount) else null,
+            isError = amount.isNotBlank() && !amountOk,
+            supporting = when {
+                amount.isNotBlank() && !amountOk -> stringResource(R.string.add_invalid_amount)
+                stillEstimate -> stringResource(R.string.detail_estimate_hint)
+                else -> null
+            },
         )
+        if (stillEstimate) {
+            Text(
+                stringResource(R.string.detail_estimate_confirm), style = DriftType.Link12, color = DriftColors.Lime,
+                modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable { estimateConfirmed = true }.padding(vertical = 4.dp),
+            )
+        }
         DriftTextField(merchant, { merchant = it }, stringResource(R.string.add_merchant))
 
         Text(stringResource(R.string.add_category), style = DriftType.Label12, color = DriftColors.TextSecondary)
@@ -153,11 +215,15 @@ private fun DetailForm(
         DateField(date, { date = it }, stringResource(R.string.add_date), errorText = stringResource(R.string.date_invalid))
         DriftTextField(note, { note = it }, stringResource(R.string.add_note), singleLine = false, minLines = 2)
 
-        SwitchRow(stringResource(R.string.add_shared), shared, { shared = it })
+        SwitchRow(stringResource(R.string.add_shared), shared, { on ->
+            shared = on
+            // Turning it on suggests half of the amount as my share (still editable).
+            if (on && mine.isBlank() && amountValue != null && amountValue > 0) mine = Fmt.fieldAmount(Money.toAgorot(amountValue / 2))
+        })
         if (shared) {
             DriftTextField(
                 mine, { mine = it }, stringResource(R.string.add_paid_actually), keyboardType = KeyboardType.Decimal,
-                isError = !shareOk, supporting = if (!shareOk) stringResource(R.string.add_invalid_share) else null,
+                isError = shareError, supporting = if (shareError) stringResource(R.string.add_invalid_share) else null,
             )
         }
 
@@ -173,11 +239,12 @@ private fun DetailForm(
 
         Spacer(Modifier.height(4.dp))
         PrimaryButton(stringResource(R.string.save), enabled = valid, onClick = {
-            val full = Money.toAgorot(amountValue!!)
-            val my = if (shared) Money.toAgorot(mineValue!!) else full
+            val full = Money.toAgorot(amountValue ?: return@PrimaryButton)
+            val my = if (shared) Money.toAgorot(mineValue ?: return@PrimaryButton) else full
+            val day = dateValue ?: return@PrimaryButton
             val oldDate = Instant.ofEpochMilli(tx.timestamp).atZone(zone)
-            val ts = if (dateValue == oldDate.toLocalDate()) tx.timestamp
-            else dateValue!!.atTime(oldDate.toLocalTime()).atZone(zone).toInstant().toEpochMilli()
+            val ts = if (day == oldDate.toLocalDate()) tx.timestamp
+            else day.atTime(oldDate.toLocalTime()).atZone(zone).toInstant().toEpochMilli()
             val updated = tx.copy(
                 amountFull = full,
                 amountMine = my,
@@ -187,6 +254,8 @@ private fun DetailForm(
                 timestamp = ts,
                 note = note.takeIf { it.isNotBlank() },
                 isUnparsed = false,
+                kind = kind.name,
+                isEstimate = stillEstimate,
             )
             onSave(updated, categoryId != tx.categoryId && merchant.trim().isNotBlank())
         })

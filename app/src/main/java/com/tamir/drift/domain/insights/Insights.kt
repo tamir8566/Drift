@@ -1,5 +1,6 @@
 package com.tamir.drift.domain.insights
 
+import com.tamir.drift.domain.classify.MerchantKey
 import com.tamir.drift.domain.model.TxnSummary
 import com.tamir.drift.domain.time.MonthPeriod
 import java.time.Instant
@@ -9,6 +10,10 @@ import java.time.temporal.ChronoUnit
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.roundToInt
+
+// Every sum here is "net": my share of expenses minus my share of refunds; transfers
+// ("לא נספר") never count. Counts are purchases only (expenses). Merchants are grouped by
+// [MerchantKey.normalize].
 
 // ---------------------------------------------------------------------------
 // (a) "Where to save": merchants with ≥3 purchases in the month
@@ -36,6 +41,7 @@ object RecurringPurchaseFinder {
     /**
      * PRD: a merchant with at least [minCount] (3) purchases in the month → monthly total,
      * yearly projection, "once a week instead" suggestion. Sorted by monthly total.
+     * Refunds of the merchant reduce its total; they are not purchases.
      */
     fun find(
         transactions: List<TxnSummary>,
@@ -44,15 +50,16 @@ object RecurringPurchaseFinder {
     ): List<RecurringPurchase> =
         transactions
             .filter { period.contains(it.timestamp) }
-            .groupBy { normalizeMerchant(it.merchant) }
-            .filter { (key, list) -> key.isNotBlank() && list.size >= minCount }
+            .groupBy { MerchantKey.normalize(it.merchant) }
+            .filter { (key, list) -> key.isNotBlank() && list.count { it.isExpense } >= minCount.coerceAtLeast(1) }
             .map { (_, list) ->
-                val total = list.sumOf { it.myShare }
+                val purchases = list.filter { it.isExpense }
+                val total = list.sumOf { it.net }.coerceAtLeast(0.0)
                 RecurringPurchase(
-                    merchant = list.first().merchant,
-                    count = list.size,
+                    merchant = purchases.first().merchant,
+                    count = purchases.size,
                     monthlyTotal = total,
-                    averageAmount = total / list.size,
+                    averageAmount = total / purchases.size,
                 )
             }
             .sortedByDescending { it.monthlyTotal }
@@ -92,9 +99,11 @@ object SubscriptionDetector {
         minCharges: Int = 2,
         excludedMerchants: Set<String> = emptySet(),
     ): List<Subscription> {
-        val excluded = excludedMerchants.map { normalizeMerchant(it) }.toSet()
+        val excluded = excludedMerchants.map { MerchantKey.normalize(it) }.toSet()
         return transactions
-            .groupBy { normalizeMerchant(it.merchant) }
+            // Only real charges: a refund or a transfer is not a subscription payment.
+            .filter { it.isExpense }
+            .groupBy { MerchantKey.normalize(it.merchant) }
             .filter { it.key.isNotBlank() && it.key !in excluded }
             .mapNotNull { (_, list) -> detectForMerchant(list, nowMillis, tolerance, minCharges) }
             .sortedWith(compareByDescending<Subscription> { it.isActive }.thenByDescending { it.amount })
@@ -155,9 +164,10 @@ object TopMerchants {
     fun rank(transactions: List<TxnSummary>, startMillis: Long, endMillis: Long, limit: Int = 5): List<MerchantRank> =
         transactions
             .filter { it.timestamp in startMillis until endMillis }
-            .groupBy { normalizeMerchant(it.merchant) }
-            .filter { it.key.isNotBlank() }
-            .map { (_, list) -> MerchantRank(list.first().merchant, list.sumOf { it.myShare }, list.size) }
+            .groupBy { MerchantKey.normalize(it.merchant) }
+            .filter { it.key.isNotBlank() && it.value.any { t -> t.isExpense } }
+            .map { (_, list) -> MerchantRank(list.first { it.isExpense }.merchant, list.sumOf { it.net }, list.count { it.isExpense }) }
+            .filter { it.total > 0.0 }
             .sortedByDescending { it.total }
             .take(limit)
 }
@@ -224,9 +234,9 @@ object MonthHistory {
             val list = grouped[ym].orEmpty()
             MonthTotal(
                 yearMonth = ym,
-                total = list.sumOf { it.myShare },
-                count = list.size,
-                byCategory = list.groupBy { it.categoryKey }.mapValues { e -> e.value.sumOf { it.myShare } },
+                total = list.sumOf { it.net },
+                count = list.count { it.isExpense },
+                byCategory = list.groupBy { it.categoryKey }.mapValues { e -> e.value.sumOf { it.net } },
             )
         }
     }
@@ -236,7 +246,7 @@ object MonthHistory {
         transactions
             .filter { it.timestamp in startMillis until endMillis }
             .groupBy { it.categoryKey }
-            .mapValues { e -> e.value.sumOf { it.myShare } }
+            .mapValues { e -> e.value.sumOf { it.net } }
 }
 
 // ---------------------------------------------------------------------------
@@ -261,10 +271,11 @@ object WeeklySummaryCalculator {
         monthBudget: Double,
     ): WeeklySummary {
         val week = transactions.filter { it.timestamp in weekStartMillis until weekEndMillis }
-        val top = week.groupBy { it.categoryKey }.mapValues { e -> e.value.sumOf { it.myShare } }.maxByOrNull { it.value }
+        val top = week.groupBy { it.categoryKey }.mapValues { e -> e.value.sumOf { it.net } }
+            .filter { it.value > 0.0 }.maxByOrNull { it.value }
         return WeeklySummary(
-            spent = week.sumOf { it.myShare },
-            count = week.size,
+            spent = week.sumOf { it.net },
+            count = week.count { it.isExpense },
             topCategoryKey = top?.key,
             topCategoryAmount = top?.value ?: 0.0,
             budgetPercentUsed = if (monthBudget > 0) monthSpent / monthBudget * 100 else 0.0,
@@ -273,4 +284,3 @@ object WeeklySummaryCalculator {
     }
 }
 
-internal fun normalizeMerchant(m: String): String = m.trim().lowercase().replace(Regex("""\s+"""), " ")

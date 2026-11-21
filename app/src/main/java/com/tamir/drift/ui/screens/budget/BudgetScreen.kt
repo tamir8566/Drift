@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -33,6 +34,8 @@ import com.tamir.drift.R
 import com.tamir.drift.data.db.CategoryEntity
 import com.tamir.drift.data.repo.Money
 import com.tamir.drift.domain.budget.CategorySpend
+import com.tamir.drift.domain.format.BarValue
+import com.tamir.drift.domain.money.AmountInput
 import com.tamir.drift.ui.LocalAppGraph
 import com.tamir.drift.ui.components.BudgetLine
 import com.tamir.drift.ui.components.CategoryBar
@@ -51,7 +54,7 @@ import com.tamir.drift.ui.driftViewModel
 import com.tamir.drift.ui.format.Fmt
 import com.tamir.drift.ui.theme.DriftColors
 import com.tamir.drift.ui.theme.DriftType
-import kotlin.math.roundToInt
+import kotlin.math.abs
 
 /** PRD "תקציב חודשי". Reached from the home hero and from settings (no longer a bottom tab). */
 @Composable
@@ -84,10 +87,15 @@ fun BudgetScreen(onBack: () -> Unit) {
                         Text(Fmt.money(summary?.totalBudget ?: 0.0), style = DriftType.Big, color = DriftColors.Text, modifier = Modifier.alignByBaseline())
                         Text(stringResource(R.string.shekel), style = DriftType.Label13, color = DriftColors.TextSecondary, modifier = Modifier.alignByBaseline())
                     }
-                    val pct = summary?.percentUsed ?: 0.0
-                    BudgetLine((pct / 100).toFloat(), color = if (summary?.isOverBudget == true) DriftColors.Orange else DriftColors.Lime)
+                    // One value for the line and for the percent under it.
+                    val bar = summary?.bar ?: BarValue.EMPTY
+                    val remaining = summary?.remaining ?: 0.0
+                    BudgetLine(bar.fraction, color = if (summary?.isOverBudget == true || bar.isOver) DriftColors.Orange else DriftColors.Lime)
                     Text(
-                        "${stringResource(R.string.budget_used)} ${Fmt.percent(pct)} · ${stringResource(R.string.budget_spent)} ${Fmt.money(summary?.spent ?: 0.0)} · ${stringResource(R.string.budget_remaining)} ${Fmt.money(summary?.remaining ?: 0.0)}",
+                        "${stringResource(R.string.budget_used)} ${Fmt.percent(bar)} · ${stringResource(R.string.budget_spent)} ${Fmt.signedMoney(summary?.spent ?: 0.0)} · " +
+                            // Over budget is said in words ("חריגה X"), not as a negative "נשאר".
+                            if (remaining < 0) "${stringResource(R.string.budget_status_over)} ${Fmt.money(abs(remaining))}"
+                            else "${stringResource(R.string.budget_remaining)} ${Fmt.money(remaining)}",
                         style = DriftType.Label12, color = DriftColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
                 }
@@ -101,7 +109,7 @@ fun BudgetScreen(onBack: () -> Unit) {
                 listOf(
                     Stat(stringResource(R.string.home_per_day), if (summary?.isOverBudget == true) stringResource(R.string.home_exceeded) else stringResource(R.string.amount_with_shekel, Fmt.money(summary?.allowedPerDay ?: 0.0)), DriftColors.Lime),
                     Stat(stringResource(R.string.budget_daily_pace), if (good) stringResource(R.string.home_good_pace) else stringResource(R.string.home_too_fast), if (good) DriftColors.Teal else DriftColors.Orange),
-                    Stat(stringResource(R.string.home_this_week), stringResource(R.string.amount_with_shekel, Fmt.money(summary?.weekSpent ?: 0.0))),
+                    Stat(stringResource(R.string.home_this_week), stringResource(R.string.amount_with_shekel, Fmt.signedMoney(summary?.weekSpent ?: 0.0))),
                 ),
             )
         }
@@ -115,7 +123,7 @@ fun BudgetScreen(onBack: () -> Unit) {
                         val spends = summary?.categories?.associateBy { it.categoryKey }.orEmpty()
                         state.categories.forEachIndexed { i, cat ->
                             val spend = spends[cat.id]
-                            CategoryBudgetRow(cat, spend, onClick = { editCategory = cat })
+                            key(cat.id) { CategoryBudgetRow(cat, spend, onClick = { editCategory = cat }) }
                             if (i < state.categories.lastIndex) HairlineDivider()
                         }
                     }
@@ -149,7 +157,7 @@ fun BudgetScreen(onBack: () -> Unit) {
                                 Column(Modifier.weight(1f)) {
                                     Text(Fmt.monthLabel(context, h.month, withYear = true), style = DriftType.RowTitle, color = DriftColors.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     Text(
-                                        stringResource(R.string.out_of, Fmt.money(h.spent), Fmt.money(h.budget)),
+                                        stringResource(R.string.out_of, Fmt.signedMoney(h.spent), Fmt.money(h.budget)),
                                         style = DriftType.Label11, color = DriftColors.TextSecondary,
                                     )
                                 }
@@ -170,7 +178,7 @@ fun BudgetScreen(onBack: () -> Unit) {
     if (editTotal) {
         AmountDialog(
             title = stringResource(R.string.budget_total),
-            initial = summary?.totalBudget?.let { Fmt.money(it).replace(",", "") } ?: "",
+            initial = summary?.totalBudget?.let { Fmt.fieldAmount(Money.toAgorot(it)) } ?: "",
             note = stringResource(R.string.budget_change_note),
             allowRemove = false,
             onDismiss = { editTotal = false },
@@ -180,7 +188,7 @@ fun BudgetScreen(onBack: () -> Unit) {
     editCategory?.let { cat ->
         AmountDialog(
             title = stringResource(R.string.budget_set_category, cat.name),
-            initial = cat.monthlyBudget?.let { Fmt.money(Money.toShekels(it)).replace(",", "") } ?: "",
+            initial = cat.monthlyBudget?.let { Fmt.fieldAmount(it) } ?: "",
             note = null,
             allowRemove = cat.monthlyBudget != null,
             onDismiss = { editCategory = null },
@@ -192,12 +200,15 @@ fun BudgetScreen(onBack: () -> Unit) {
 @Composable
 private fun CategoryBudgetRow(cat: CategoryEntity, spend: CategorySpend?, onClick: () -> Unit) {
     val spent = spend?.spent ?: 0.0
-    val budget = cat.monthlyBudget?.let { Money.toShekels(it) }
-    val pct = spend?.percentOfBudget
+    // The budget, the bar and the percent all come from the month summary (one emission).
+    val budget = spend?.budget?.takeIf { it > 0.0 }
+    val bar = spend?.bar ?: BarValue.EMPTY
+    val over = budget != null && bar.isOver
+    val warning = budget != null && (spend?.isWarning == true || over)
     val status = when {
         budget == null -> stringResource(R.string.budget_no_category_budget) to DriftColors.TextDim
-        pct != null && pct >= 100 -> stringResource(R.string.budget_status_over) to DriftColors.Orange
-        pct != null && pct > 85 -> stringResource(R.string.budget_status_warning) to DriftColors.Orange
+        over || bar.percent >= 100 -> stringResource(R.string.budget_status_over) to DriftColors.Orange
+        warning -> stringResource(R.string.budget_status_warning) to DriftColors.Orange
         else -> stringResource(R.string.budget_status_ok) to DriftColors.Teal
     }
     Column(
@@ -206,17 +217,18 @@ private fun CategoryBudgetRow(cat: CategoryEntity, spend: CategorySpend?, onClic
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(cat.name, style = DriftType.RowTitle, color = DriftColors.Text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-            Text(status.first, style = DriftType.Label11, color = status.second)
+            Text(status.first, style = DriftType.Label11, color = status.second, maxLines = 1)
             Text(
-                if (budget != null) stringResource(R.string.out_of, Fmt.money(spent), Fmt.money(budget)) else stringResource(R.string.amount_with_shekel, Fmt.money(spent)),
+                if (budget != null) stringResource(R.string.out_of, Fmt.signedMoney(spent), Fmt.money(budget)) else stringResource(R.string.amount_with_shekel, Fmt.signedMoney(spent)),
                 style = DriftType.Label12, color = DriftColors.TextSecondary, maxLines = 1,
             )
         }
-        val fraction = if (budget != null && budget > 0) (spent / budget).toFloat() else (spend?.shareOfTotal ?: 0.0).toFloat()
-        CategoryBar(fraction, if ((pct ?: 0.0) > 85) DriftColors.Orange else cat.composeColor())
-        if (budget != null && pct != null) {
-            Text("${pct.roundToInt()}%", style = DriftType.Tag10, color = DriftColors.TextDim)
-        }
+        CategoryBar(bar.fraction, if (warning) DriftColors.Orange else cat.composeColor())
+        // The percent the bar shows, and what it is a percent of.
+        Text(
+            if (budget != null) Fmt.percent(bar) else stringResource(R.string.budget_share_of_total, Fmt.percent(bar)),
+            style = DriftType.Tag10, color = DriftColors.TextDim, maxLines = 1,
+        )
     }
 }
 
@@ -231,7 +243,7 @@ fun AmountDialog(
     onSave: (Double?) -> Unit,
 ) {
     var text by remember { mutableStateOf(initial) }
-    val value = text.replace(",", "").toDoubleOrNull()
+    val value = AmountInput.parse(text)
     DriftDialog(
         title = title,
         onDismiss = onDismiss,

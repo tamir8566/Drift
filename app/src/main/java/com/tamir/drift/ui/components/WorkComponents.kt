@@ -26,6 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,6 +39,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tamir.drift.R
+import com.tamir.drift.domain.format.BarValue
 import com.tamir.drift.domain.work.MonthSavingHistory
 import com.tamir.drift.ui.format.Fmt
 import com.tamir.drift.ui.theme.DriftColors
@@ -110,14 +112,19 @@ fun StepperRow(
  * Job card for the 2×2 grid (same shape as the category card): name 12sp secondary, percent of
  * the weekly goal at the end, amount 20sp bold, meta line, bar beneath. [extraText] adds a second
  * small line (the job's travel reimbursement); pass "" to only reserve its height.
+ *
+ * The percent and the bar come from the one [bar] value (this week's income of the job against
+ * the weekly goal), and [referenceText] spells that reference out ("השבוע X מתוך יעד שבועי Y").
+ * Above 100% the bar is full and the text keeps the real percent — earning more than the goal is
+ * good news, so the bar keeps the job's colour.
  */
 @Composable
 fun JobCard(
     name: String,
     amountText: String,
     metaText: String,
-    percent: Int,
-    barFraction: Float,
+    bar: BarValue,
+    referenceText: String,
     color: Color,
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
@@ -127,14 +134,15 @@ fun JobCard(
         Column(Modifier.padding(horizontal = 14.dp, vertical = 13.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text(name, style = DriftType.Label12, color = DriftColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                Text("$percent%", style = DriftType.Percent11, color = DriftColors.TextSecondary)
+                Text(Fmt.percent(bar), style = DriftType.Percent11, color = DriftColors.TextSecondary, maxLines = 1)
             }
             Text(amountText, style = DriftType.Value20, color = DriftColors.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(metaText, style = DriftType.Label11, color = DriftColors.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (extraText != null) {
                 Text(extraText, style = DriftType.Label11, color = DriftColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            CategoryBar(barFraction, color)
+            Text(referenceText, style = DriftType.Tag10, color = DriftColors.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            CategoryBar(bar.fraction, color)
         }
     }
 }
@@ -238,14 +246,15 @@ fun LegendDot(label: String, color: Color, ring: Boolean = false) {
 
 /**
  * 6-month saved-vs-goal bars: lime when the month met the goal, orange otherwise, with a hairline
- * at the goal level. Negative months show a minimal orange stub.
+ * at the goal level. The label above each bar is the same value the bar is drawn from; a month
+ * with nothing saved — or a negative one — has no bar and its label says so ("0" / "−350").
  */
 @Composable
 fun SavingHistoryBars(items: List<MonthSavingHistory>, currentMonth: YearMonth, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val barArea = 96
     val max = (items.maxOfOrNull { maxOf(it.savedAgorot, it.goalAgorot) } ?: 1L).coerceAtLeast(1L).toDouble()
-    val goalFraction = (items.firstOrNull()?.goalAgorot ?: 0L).toDouble() / max
+    val goalFraction = ((items.firstOrNull()?.goalAgorot ?: 0L).toDouble() / max).coerceIn(0.0, 1.0)
     Column(modifier.fillMaxWidth()) {
         Box(Modifier.fillMaxWidth().height((barArea + 18).dp)) {
             if (goalFraction > 0.0) {
@@ -260,20 +269,28 @@ fun SavingHistoryBars(items: List<MonthSavingHistory>, currentMonth: YearMonth, 
             }
             Row(Modifier.fillMaxWidth().fillMaxHeight(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Bottom) {
                 items.forEach { m ->
-                    val target = (m.savedAgorot.toDouble() / max).toFloat().coerceIn(0.02f, 1f)
-                    val animated by animateFloatAsState(target, tween(BAR_ANIM_MS), label = "savingBar")
-                    val color = if (m.met) DriftColors.Lime else DriftColors.Orange
-                    val isCurrent = m.month == currentMonth
-                    Column(Modifier.weight(1f).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Bottom) {
-                        Text(Fmt.moneyAgorot(m.savedAgorot), style = DriftType.Tag10, color = DriftColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Spacer(Modifier.height(4.dp))
-                        Box(
-                            Modifier
-                                .fillMaxWidth()
-                                .height((barArea * animated).dp)
-                                .clip(RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp))
-                                .background(if (isCurrent) color else color.copy(alpha = 0.45f)),
-                        )
+                    // Keyed by month: each bar animates from its own previous height, also when
+                    // the list shifts by a month.
+                    key(m.month) {
+                        val target = BarValue(m.savedAgorot.toDouble(), max).fraction
+                        val animated by animateFloatAsState(target, tween(BAR_ANIM_MS), label = "savingBar")
+                        val color = if (m.met) DriftColors.Lime else DriftColors.Orange
+                        val isCurrent = m.month == currentMonth
+                        Column(Modifier.weight(1f).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Bottom) {
+                            Text(
+                                Fmt.signedMoneyAgorot(m.savedAgorot), style = DriftType.Tag10,
+                                color = if (m.savedAgorot < 0L) DriftColors.Orange else DriftColors.TextSecondary,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Box(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .height((barArea * animated).dp)
+                                    .clip(RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp))
+                                    .background(if (isCurrent) color else color.copy(alpha = 0.45f)),
+                            )
+                        }
                     }
                 }
             }
@@ -289,6 +306,36 @@ fun SavingHistoryBars(items: List<MonthSavingHistory>, currentMonth: YearMonth, 
                     textAlign = TextAlign.Center,
                 )
             }
+        }
+    }
+}
+
+/**
+ * A tick box the user marks himself, with a title and one explanatory sentence: a 20dp rounded
+ * square (lime border; lime fill with a check when ticked). The whole row is the touch target.
+ */
+@Composable
+fun CheckRow(title: String, description: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { onCheckedChange(!checked) }.padding(vertical = 8.dp),
+        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        val shape = RoundedCornerShape(6.dp)
+        Box(
+            Modifier
+                .padding(top = 1.dp)
+                .size(20.dp)
+                .clip(shape)
+                .background(if (checked) DriftColors.Lime else DriftColors.GlassFill, shape)
+                .border(1.dp, if (checked) DriftColors.Lime else DriftColors.PlusBorder, shape),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (checked) Icon(DriftIcons.Check, null, tint = DriftColors.Background, modifier = Modifier.size(14.dp))
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(title, style = DriftType.RowTitle, color = DriftColors.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(description, style = DriftType.Label11, color = DriftColors.TextSecondary, maxLines = 4, overflow = TextOverflow.Ellipsis)
         }
     }
 }

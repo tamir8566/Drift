@@ -13,6 +13,7 @@ import com.tamir.drift.data.settings.SettingsStore
 import com.tamir.drift.notify.BudgetAlertChecker
 import com.tamir.drift.notify.Notifier
 import com.tamir.drift.update.UpdateChecker
+import kotlinx.coroutines.flow.MutableSharedFlow
 
 /** Simple manual dependency graph; one instance per process. */
 class AppGraph private constructor(val appContext: Context) {
@@ -27,8 +28,18 @@ class AppGraph private constructor(val appContext: Context) {
     val monthSummary: MonthSummaryUseCase by lazy { MonthSummaryUseCase() }
     val notifier: Notifier by lazy { Notifier(appContext) }
     val alertChecker: BudgetAlertChecker by lazy { BudgetAlertChecker(appContext, db, settings, notifier, monthSummary) }
-    val captureProcessor: CaptureProcessor by lazy { CaptureProcessor(db, categories, alertChecker) }
+    val captureProcessor: CaptureProcessor by lazy { CaptureProcessor(db, categories, alertChecker, settings) }
     val updateChecker: UpdateChecker by lazy { UpdateChecker(appContext, settings) }
+
+    /**
+     * Short one-line messages for the user ("עודכנו 3 הוצאות של …"); the root of the UI shows each
+     * for a few seconds. A screen may emit and leave — the message outlives it.
+     */
+    val messages: MutableSharedFlow<String> = MutableSharedFlow(extraBufferCapacity = 8)
+
+    fun showMessage(text: String) {
+        messages.tryEmit(text)
+    }
 
     companion object {
         @Volatile private var instance: AppGraph? = null

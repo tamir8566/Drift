@@ -21,6 +21,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tamir.drift.R
+import com.tamir.drift.capture.CaptureProcessor
 import com.tamir.drift.ui.LocalAppGraph
 import com.tamir.drift.ui.components.EmptyNote
 import com.tamir.drift.ui.components.GlassCard
@@ -30,9 +31,12 @@ import com.tamir.drift.ui.format.Fmt
 import com.tamir.drift.ui.theme.DriftColors
 import com.tamir.drift.ui.theme.DriftType
 
-/** PRD: the last 20 raw captured texts with their parse outcome. */
+/**
+ * PRD: the last 20 raw captured texts with their parse outcome. The outcome is shown with a
+ * Hebrew label; a card whose capture became an expense opens that expense.
+ */
 @Composable
-fun DebugLogScreen(onBack: () -> Unit) {
+fun DebugLogScreen(onBack: () -> Unit, onOpenTransaction: (Long) -> Unit) {
     val graph = LocalAppGraph.current
     val captures by graph.db.rawCaptures().observeLatest(20).collectAsStateWithLifecycle(initialValue = emptyList())
 
@@ -44,21 +48,26 @@ fun DebugLogScreen(onBack: () -> Unit) {
         item { ScreenHeader(stringResource(R.string.debug_title), onBack = onBack, backDescription = stringResource(R.string.nav_back)) }
         if (captures.isEmpty()) item { EmptyNote(stringResource(R.string.debug_empty)) }
         items(captures, key = { it.id }) { c ->
-            GlassCard(Modifier.fillMaxWidth(), radius = 16.dp) {
+            val linkedId = c.transactionId?.takeIf { it > 0 }
+            GlassCard(Modifier.fillMaxWidth(), radius = 16.dp, onClick = linkedId?.let { id -> { onOpenTransaction(id) } }) {
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Text("${sourceName(c.source)} · ${c.senderOrPackage}", style = DriftType.Label11, color = DriftColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                         Text("${Fmt.shortDate(c.capturedAt)} ${Fmt.time(c.capturedAt)}", style = DriftType.Label11, color = DriftColors.TextDim)
                     }
                     Text(c.text, style = DriftType.Label12, color = DriftColors.Text, maxLines = 8, overflow = TextOverflow.Ellipsis)
-                    val resultColor = when {
-                        c.result.startsWith("PARSED") -> DriftColors.Teal
-                        c.result.startsWith("DUPLICATE") -> DriftColors.TextSecondary
-                        else -> DriftColors.Orange
+                    // The stored outcome is a code (PARSED / REFUND / UNPARSED / DUPLICATE / "FAILED: reason"); show it in Hebrew.
+                    val (label, resultColor) = when {
+                        c.result.startsWith(CaptureProcessor.RESULT_PARSED) -> stringResource(R.string.debug_result_parsed) to DriftColors.Teal
+                        c.result.startsWith(CaptureProcessor.RESULT_REFUND) -> stringResource(R.string.debug_result_refund) to DriftColors.Teal
+                        c.result.startsWith(CaptureProcessor.RESULT_DUPLICATE) -> stringResource(R.string.debug_result_duplicate) to DriftColors.TextSecondary
+                        c.result.startsWith(CaptureProcessor.RESULT_UNPARSED) -> stringResource(R.string.debug_result_unparsed) to DriftColors.Orange
+                        c.result.startsWith(CaptureProcessor.RESULT_FAILED) -> stringResource(R.string.debug_result_failed) to DriftColors.Orange
+                        else -> "—" to DriftColors.TextDim
                     }
-                    Text(stringResource(R.string.debug_result, c.result.ifBlank { "—" }), style = DriftType.Label11, color = resultColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    c.transactionId?.takeIf { it > 0 }?.let {
-                        Text(stringResource(R.string.debug_linked, it), style = DriftType.Label11, color = DriftColors.TextDim)
+                    Text(stringResource(R.string.debug_result, label), style = DriftType.Label11, color = resultColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (linkedId != null) {
+                        Text(stringResource(R.string.debug_linked_open), style = DriftType.Link12, color = DriftColors.Lime, maxLines = 1)
                     }
                 }
             }

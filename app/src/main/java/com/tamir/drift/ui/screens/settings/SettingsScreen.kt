@@ -39,7 +39,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -47,8 +46,11 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tamir.drift.BuildConfig
 import com.tamir.drift.R
+import com.tamir.drift.capture.CaptureStatus
 import com.tamir.drift.data.db.Origin
 import com.tamir.drift.data.settings.Settings
+import com.tamir.drift.domain.money.AmountInput
+import com.tamir.drift.domain.money.Currencies
 import com.tamir.drift.notify.WeeklySummaryScheduler
 import com.tamir.drift.notify.WorkSummaryScheduler
 import com.tamir.drift.ui.LocalAppGraph
@@ -91,8 +93,8 @@ fun SettingsScreen(onBack: () -> Unit, onOpenCalibration: () -> Unit, onOpenDebu
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
-    val notifAccess = remember(refresh) { NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName) }
-    val smsGranted = remember(refresh) { ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED }
+    val notifAccess = remember(refresh) { CaptureStatus.listenerEnabled(context) }
+    val smsGranted = remember(refresh) { CaptureStatus.smsGranted(context) }
     val postGranted = remember(refresh) { Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED }
     val installGranted = remember(refresh) { graph.updateChecker.canInstall() }
     val smsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -106,6 +108,8 @@ fun SettingsScreen(onBack: () -> Unit, onOpenCalibration: () -> Unit, onOpenDebu
     var editPackages by remember { mutableStateOf(false) }
     var editWeekly by remember { mutableStateOf(false) }
     var editTrackingStart by remember { mutableStateOf(false) }
+    // The currency ("USD" / "EUR" / "GBP") whose rate is being edited.
+    var editFx by remember { mutableStateOf<String?>(null) }
     var updateStatus by remember { mutableStateOf<String?>(null) }
 
     LazyColumn(
@@ -152,6 +156,35 @@ fun SettingsScreen(onBack: () -> Unit, onOpenCalibration: () -> Unit, onOpenDebu
                         NavRow(stringResource(R.string.settings_sms_senders), settings?.smsSenders?.joinToString(", ") ?: "") { editSenders = true }
                         HairlineDivider()
                         NavRow(stringResource(R.string.settings_packages), settings?.notificationPackages?.joinToString(", ") ?: "") { editPackages = true }
+                        HairlineDivider()
+                        // Capture watchdog: a quiet daily check that capture still works.
+                        SwitchRow(
+                            stringResource(R.string.settings_watchdog), settings?.captureWatchdogEnabled ?: true,
+                            { v -> scope.launch { graph.settings.setCaptureWatchdogEnabled(v) } },
+                            subtitle = stringResource(R.string.settings_watchdog_desc),
+                        )
+                    }
+                }
+            }
+        }
+
+        // Exchange rates: no network — the user keeps them roughly up to date; they only feed the "≈" estimate.
+        item {
+            Column {
+                SectionHeader(stringResource(R.string.settings_fx))
+                GlassCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
+                        val fx = settings?.fxRates
+                        Currencies.foreign.forEachIndexed { i, code ->
+                            val rate = fx?.rateFor(code)
+                            NavRow(currencyName(code), rate?.let { stringResource(R.string.settings_fx_rate, Fmt.moneyExact(it)) } ?: "") { editFx = code }
+                            if (i < Currencies.foreign.lastIndex) HairlineDivider()
+                        }
+                        Text(
+                            stringResource(R.string.settings_fx_desc),
+                            style = DriftType.Label11, color = DriftColors.TextSecondary,
+                            modifier = Modifier.padding(bottom = 10.dp),
+                        )
                     }
                 }
             }
@@ -296,6 +329,18 @@ fun SettingsScreen(onBack: () -> Unit, onOpenCalibration: () -> Unit, onOpenDebu
             editWeekly = false
         }
     }
+    val fxCode = editFx
+    if (fxCode != null && s != null) {
+        FxRateDialog(fxCode, s.fxRates.rateFor(fxCode) ?: 0L, onDismiss = { editFx = null }) { agorot ->
+            val rates = when (fxCode) {
+                Currencies.USD -> s.fxRates.copy(usdAgorot = agorot)
+                Currencies.EUR -> s.fxRates.copy(eurAgorot = agorot)
+                else -> s.fxRates.copy(gbpAgorot = agorot)
+            }
+            scope.launch { graph.settings.setFxRates(rates) }
+            editFx = null
+        }
+    }
     if (editTrackingStart && s != null) {
         TrackingStartDialog(LocalDate.ofEpochDay(s.trackingStartEpochDay), onDismiss = { editTrackingStart = false }) { date ->
             scope.launch { graph.settings.setTrackingStart(date.toEpochDay()) }
@@ -316,6 +361,35 @@ private fun TrackingStartDialog(current: LocalDate, onDismiss: () -> Unit, onSav
     ) {
         DateField(text, { text = it }, stringResource(R.string.settings_tracking_start_date), errorText = stringResource(R.string.date_invalid))
         Text(stringResource(R.string.settings_tracking_start_desc), style = DriftType.Label12, color = DriftColors.TextSecondary)
+    }
+}
+
+@Composable
+private fun currencyName(code: String): String = stringResource(
+    when (code) {
+        Currencies.USD -> R.string.fx_usd
+        Currencies.EUR -> R.string.fx_eur
+        else -> R.string.fx_gbp
+    },
+)
+
+/** Edits one exchange rate: how many shekels one unit of the currency costs. */
+@Composable
+private fun FxRateDialog(code: String, currentAgorot: Long, onDismiss: () -> Unit, onSave: (Long) -> Unit) {
+    var text by remember { mutableStateOf(if (currentAgorot > 0L) Fmt.fieldAmount(currentAgorot) else "") }
+    val value = AmountInput.parse(text)
+    val valid = value != null && value > 0.0
+    DriftDialog(
+        currencyName(code), onDismiss, stringResource(R.string.save),
+        onConfirm = { if (value != null && value > 0.0) onSave(com.tamir.drift.data.repo.Money.toAgorot(value)) },
+        dismissText = stringResource(R.string.cancel), confirmEnabled = valid,
+    ) {
+        DriftTextField(
+            text, { text = it }, stringResource(R.string.settings_fx_field), keyboardType = KeyboardType.Decimal,
+            isError = text.isNotBlank() && !valid,
+            supporting = if (text.isNotBlank() && !valid) stringResource(R.string.add_invalid_amount) else null,
+        )
+        Text(stringResource(R.string.settings_fx_desc), style = DriftType.Label12, color = DriftColors.TextSecondary)
     }
 }
 

@@ -6,6 +6,7 @@ import com.tamir.drift.data.db.CategoryEntity
 import com.tamir.drift.data.db.TransactionEntity
 import com.tamir.drift.data.repo.Money
 import com.tamir.drift.data.repo.toShiftSummaries
+import com.tamir.drift.data.repo.toSummaries
 import com.tamir.drift.di.AppGraph
 import com.tamir.drift.domain.budget.CategorySpend
 import com.tamir.drift.domain.budget.MonthSummary
@@ -15,7 +16,9 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import java.time.LocalDate
 import java.time.YearMonth
+import java.time.ZoneId
 
 data class HomeUiState(
     val loading: Boolean = true,
@@ -28,8 +31,10 @@ data class HomeUiState(
     val unparsedCount: Int = 0,
     /** PRD 8 Nov: shifts income this month (shekels). */
     val earnedThisMonth: Double = 0.0,
-    /** PRD 8 Nov: income − my share of expenses (shekels); may be negative. */
+    /** PRD 8 Nov: income − my share of expenses (shekels); may be negative. The same figure as the goal screen's "נחסך החודש". */
     val savedThisMonth: Double = 0.0,
+    /** True when SMS senders are configured, i.e. the SMS permission matters for capture. */
+    val smsCaptureConfigured: Boolean = true,
 )
 
 class HomeViewModel(graph: AppGraph) : ViewModel() {
@@ -41,14 +46,21 @@ class HomeViewModel(graph: AppGraph) : ViewModel() {
         graph.work.shifts,
         graph.settings.settings,
     ) { txs, cats, budgets, shifts, settings ->
-        val month = YearMonth.now()
+        val zone = ZoneId.systemDefault()
+        val today = LocalDate.now(zone)
+        val month = YearMonth.from(today)
         // Tracking start: totals, "השבוע" and "מול חודש קודם" only count records from it on
         // (a previous month before the start has no spend → the existing "—").
         val window = settings.trackingWindow
         val summary = graph.monthSummary.build(txs, cats, budgets, month, window)
         val top = summary.categories.filter { it.spent > 0 }.take(4).ifEmpty { summary.categories.take(4) }
         // Budget math is untouched; the earned/saved row is purely additive.
-        val earned = Money.toShekels(GoalCalculator.earnedIn(shifts.toShiftSummaries().sinceStart(window), month))
+        // Computed exactly like the goal screen (agorot, expenses through the end of today), so
+        // "נחסכו" here and "נחסך החודש" there are always the same number.
+        val earnedAgorot = GoalCalculator.earnedIn(shifts.toShiftSummaries().sinceStart(window), month)
+        val spentBefore = today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+        val spentAgorot = GoalCalculator.spentIn(txs.toSummaries().sinceStart(window, zone), month, zone, spentBefore)
+        val earned = Money.toShekels(earnedAgorot)
         HomeUiState(
             loading = false,
             month = month,
@@ -58,7 +70,8 @@ class HomeViewModel(graph: AppGraph) : ViewModel() {
             recent = txs.filter { !it.isUnparsed }.sortedByDescending { it.timestamp }.take(6),
             unparsedCount = txs.count { it.isUnparsed },
             earnedThisMonth = earned,
-            savedThisMonth = earned - summary.spent,
+            savedThisMonth = Money.toShekels(earnedAgorot - spentAgorot),
+            smsCaptureConfigured = settings.smsSenders.isNotEmpty(),
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState())
 }

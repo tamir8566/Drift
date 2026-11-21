@@ -26,6 +26,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tamir.drift.R
 import com.tamir.drift.data.repo.Money
 import com.tamir.drift.domain.model.CategoryKeys
+import com.tamir.drift.domain.money.AmountInput
 import com.tamir.drift.ui.LocalAppGraph
 import com.tamir.drift.ui.components.ChoiceRow
 import com.tamir.drift.ui.components.DateField
@@ -35,6 +36,7 @@ import com.tamir.drift.ui.components.ScreenHeader
 import com.tamir.drift.ui.components.SwitchRow
 import com.tamir.drift.ui.components.parseDate
 import com.tamir.drift.ui.components.toFieldText
+import com.tamir.drift.ui.format.Fmt
 import com.tamir.drift.ui.theme.DriftColors
 import com.tamir.drift.ui.theme.DriftType
 import kotlinx.coroutines.launch
@@ -59,11 +61,13 @@ fun ManualAddScreen(onDone: () -> Unit) {
     var mine by remember { mutableStateOf("") }
     var autoCategory by remember { mutableStateOf(true) }
 
-    val amountValue = amount.replace(",", "").toDoubleOrNull()
-    val mineValue = mine.replace(",", "").toDoubleOrNull()
+    val amountValue = AmountInput.parse(amount)
+    val mineValue = AmountInput.parse(mine)
     val dateValue = parseDate(date)
     val amountOk = amountValue != null && amountValue > 0
     val shareOk = !shared || (mineValue != null && mineValue >= 0 && amountValue != null && mineValue <= amountValue)
+    // An empty "my share" is simply not filled in yet — no error until something was typed.
+    val shareError = shared && mine.isNotBlank() && !shareOk
     val valid = amountOk && shareOk && dateValue != null
 
     Column(
@@ -97,21 +101,26 @@ fun ManualAddScreen(onDone: () -> Unit) {
         DateField(date, { date = it }, stringResource(R.string.add_date), errorText = stringResource(R.string.date_invalid))
         DriftTextField(note, { note = it }, stringResource(R.string.add_note), singleLine = false, minLines = 2)
 
-        SwitchRow(stringResource(R.string.add_shared), shared, { shared = it })
+        SwitchRow(stringResource(R.string.add_shared), shared, { on ->
+            shared = on
+            // Turning it on suggests half of the amount as my share (still editable).
+            if (on && mine.isBlank() && amountValue != null && amountValue > 0) mine = Fmt.fieldAmount(Money.toAgorot(amountValue / 2))
+        })
         if (shared) {
             DriftTextField(
                 mine, { mine = it }, stringResource(R.string.add_paid_actually), keyboardType = KeyboardType.Decimal,
-                isError = !shareOk, supporting = if (!shareOk) stringResource(R.string.add_invalid_share) else null,
+                isError = shareError, supporting = if (shareError) stringResource(R.string.add_invalid_share) else null,
             )
         }
 
         Spacer(Modifier.height(6.dp))
         PrimaryButton(stringResource(R.string.save), enabled = valid, onClick = {
-            val full = Money.toAgorot(amountValue!!)
-            val my = if (shared) Money.toAgorot(mineValue!!) else full
+            val full = Money.toAgorot(amountValue ?: return@PrimaryButton)
+            val my = if (shared) Money.toAgorot(mineValue ?: return@PrimaryButton) else full
             // Keep the current clock time when the date is today, else noon of that day.
             val now = LocalTime.now(zone)
-            val ts = dateValue!!.atTime(if (dateValue == LocalDate.now(zone)) now else LocalTime.NOON).atZone(zone).toInstant().toEpochMilli()
+            val day = dateValue ?: return@PrimaryButton
+            val ts = day.atTime(if (day == LocalDate.now(zone)) now else LocalTime.NOON).atZone(zone).toInstant().toEpochMilli()
             scope.launch {
                 graph.transactions.addManual(ts, full, my, shared, merchant, categoryId, note)
                 graph.alertChecker.checkAndNotify()

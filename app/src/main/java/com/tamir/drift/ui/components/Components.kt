@@ -28,18 +28,27 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.tamir.drift.domain.format.BarValue
+import com.tamir.drift.ui.format.Fmt
 import com.tamir.drift.ui.theme.DriftColors
 import com.tamir.drift.ui.theme.DriftType
 
@@ -118,12 +127,21 @@ fun GlassIconButton(icon: ImageVector, contentDescription: String, onClick: () -
 }
 
 /**
+ * A bar's fraction made safe to draw: 0..1, and 0 for a NaN (0 / 0) so nothing downstream can
+ * receive an invalid width.
+ */
+private fun safeFraction(fraction: Float): Float = if (fraction.isNaN()) 0f else fraction.coerceIn(0f, 1f)
+
+/**
  * The budget line: 2dp track (white 12%), lime fill starting at the start edge (right in RTL),
  * a 10dp dot at the end of the fill. No glow (PRD).
+ *
+ * Pass `bar.fraction` of the same [BarValue] whose percent is printed next to the line: a value
+ * above 100% draws a full line while the text keeps the real percent, a negative one draws empty.
  */
 @Composable
 fun BudgetLine(fraction: Float, modifier: Modifier = Modifier, color: Color = DriftColors.Lime) {
-    val target = fraction.coerceIn(0f, 1f)
+    val target = safeFraction(fraction)
     val animated by animateFloatAsState(target, animationSpec = tween(BAR_ANIM_MS), label = "budgetLine")
     Box(modifier.fillMaxWidth().height(10.dp), contentAlignment = Alignment.CenterStart) {
         Box(Modifier.fillMaxWidth().height(2.dp).background(DriftColors.LineTrack))
@@ -148,7 +166,7 @@ fun BudgetLine(fraction: Float, modifier: Modifier = Modifier, color: Color = Dr
 /** 3dp category bar with a white 10% track; animated fill. */
 @Composable
 fun CategoryBar(fraction: Float, color: Color, modifier: Modifier = Modifier) {
-    val animated by animateFloatAsState(fraction.coerceIn(0f, 1f), animationSpec = tween(BAR_ANIM_MS), label = "categoryBar")
+    val animated by animateFloatAsState(safeFraction(fraction), animationSpec = tween(BAR_ANIM_MS), label = "categoryBar")
     Box(modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(99.dp)).background(DriftColors.BarTrack)) {
         Box(Modifier.fillMaxWidth(animated).fillMaxHeight().background(color))
     }
@@ -158,36 +176,42 @@ fun CategoryBar(fraction: Float, color: Color, modifier: Modifier = Modifier) {
 @Composable
 fun SegmentedBar(segments: List<Pair<Float, Color>>, modifier: Modifier = Modifier, height: Dp = 6.dp) {
     Row(modifier.fillMaxWidth().height(height).clip(RoundedCornerShape(99.dp)).background(DriftColors.BarTrack)) {
-        segments.filter { it.first > 0f }.forEachIndexed { i, (f, c) ->
+        val shown = segments.filter { it.first > 0f }
+        shown.forEachIndexed { i, (f, c) ->
             Box(Modifier.weight(f).fillMaxHeight().background(c))
-            if (i < segments.lastIndex) Spacer(Modifier.width(2.dp))
+            if (i < shown.lastIndex) Spacer(Modifier.width(2.dp))
         }
     }
 }
 
 /**
  * Category card for the 2×2 grid: name 12sp secondary (ellipsized), percent 11sp bold at the
- * end (orange when > 85% of its budget), amount 20sp bold, bar beneath.
+ * end (orange when > 85% of its budget), amount 20sp bold, what the percent is measured against
+ * ([referenceText]: "מתוך 500 ₪" / "מסך ההוצאות"), bar beneath.
+ *
+ * The percent and the bar come from the one [bar] value, so they cannot disagree: above 100% the
+ * bar is full and the text keeps the real percent; below zero the bar is empty.
  */
 @Composable
 fun CategoryCard(
     name: String,
     amountText: String,
-    percent: Int,
-    barFraction: Float,
+    bar: BarValue,
+    referenceText: String,
     color: Color,
     warning: Boolean,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
     GlassCard(modifier, radius = 20.dp, onClick = onClick) {
-        Column(Modifier.padding(horizontal = 14.dp, vertical = 13.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 13.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text(name, style = DriftType.Label12, color = DriftColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                Text("$percent%", style = DriftType.Percent11, color = if (warning) DriftColors.Orange else DriftColors.TextSecondary)
+                Text(Fmt.percent(bar), style = DriftType.Percent11, color = if (warning) DriftColors.Orange else DriftColors.TextSecondary, maxLines = 1)
             }
             Text(amountText, style = DriftType.Value20, color = DriftColors.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            CategoryBar(barFraction, if (warning) DriftColors.Orange else color)
+            Text(referenceText, style = DriftType.Tag10, color = DriftColors.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            CategoryBar(bar.fraction, if (warning) DriftColors.Orange else color)
         }
     }
 }
@@ -205,11 +229,15 @@ fun TransactionRow(
     sharedTag: String?,
     modifier: Modifier = Modifier,
     titleColor: Color = DriftColors.Text,
+    amountColor: Color = DriftColors.Text,
+    tagColor: Color = DriftColors.Lime,
+    /** A row that does not count ("לא נספר") is drawn dimmed. */
+    dimmed: Boolean = false,
     onClick: () -> Unit,
 ) {
     Column(modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).clickable(onClick = onClick)) {
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 2.dp, vertical = 10.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 2.dp, vertical = 10.dp).alpha(if (dimmed) 0.5f else 1f),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
@@ -219,9 +247,9 @@ fun TransactionRow(
                 Text(meta, style = DriftType.Label11, color = DriftColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(amountText, style = DriftType.RowAmount, color = DriftColors.Text, maxLines = 1)
+                Text(amountText, style = DriftType.RowAmount, color = amountColor, maxLines = 1)
                 if (sharedTag != null) {
-                    Text(sharedTag, style = DriftType.Tag10, color = DriftColors.Lime, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(sharedTag, style = DriftType.Tag10, color = tagColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         }
@@ -235,7 +263,46 @@ fun TransactionRow(
  */
 data class Stat(val label: String, val value: String, val color: Color = DriftColors.Text)
 
-/** Glass card with three equal columns separated by white 10% hairlines. Values never wrap or ellipsize. */
+/**
+ * One line of text that always fits: when it is wider than the space it has, the font size steps
+ * down (1sp at a time) to [minFontSize]; only if it still does not fit is it cut with "…".
+ * Nothing is drawn until the size is settled, so the steps are never visible.
+ */
+@Composable
+fun AutoShrinkText(
+    text: String,
+    style: TextStyle,
+    color: Color,
+    modifier: Modifier = Modifier,
+    minFontSize: TextUnit = 12.sp,
+) {
+    var fontSize by remember(text, style) { mutableStateOf(style.fontSize) }
+    var settled by remember(text, style) { mutableStateOf(false) }
+    val atMinimum = fontSize.value <= minFontSize.value
+    Text(
+        text,
+        style = style.copy(fontSize = fontSize),
+        color = color,
+        maxLines = 1,
+        softWrap = false,
+        // While measuring, the text is laid out unconstrained so an overflow is detected; at the
+        // minimum size whatever is left over is ellipsized.
+        overflow = if (atMinimum) TextOverflow.Ellipsis else TextOverflow.Clip,
+        modifier = modifier.drawWithContent { if (settled) drawContent() },
+        onTextLayout = { result ->
+            if (result.hasVisualOverflow && !atMinimum) {
+                fontSize = (fontSize.value - 1f).coerceAtLeast(minFontSize.value).sp
+            } else {
+                settled = true
+            }
+        },
+    )
+}
+
+/**
+ * Glass card with three equal columns separated by white 10% hairlines. A value that is too wide
+ * for its column shrinks to fit ([AutoShrinkText]) instead of being clipped.
+ */
 @Composable
 fun StatTriplet(stats: List<Stat>, modifier: Modifier = Modifier) {
     GlassCard(modifier.fillMaxWidth(), radius = 22.dp) {
@@ -243,7 +310,7 @@ fun StatTriplet(stats: List<Stat>, modifier: Modifier = Modifier) {
             stats.forEachIndexed { i, s ->
                 Column(Modifier.weight(1f).padding(horizontal = if (i == 0) 0.dp else 10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(s.label, style = DriftType.Label11, color = DriftColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(s.value, style = DriftType.Value18, color = s.color, maxLines = 1, softWrap = false, overflow = TextOverflow.Clip)
+                    AutoShrinkText(s.value, style = DriftType.Value18, color = s.color, modifier = Modifier.fillMaxWidth())
                 }
                 if (i < stats.lastIndex) {
                     Box(Modifier.width(1.dp).fillMaxHeight().background(DriftColors.StatDivider))

@@ -11,6 +11,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.tamir.drift.BuildConfig
+import com.tamir.drift.domain.money.FxRates
 import com.tamir.drift.domain.time.TrackingWindow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -46,6 +47,20 @@ data class Settings(
     val trackingStartEpochDay: Long,
     /** The day the app was first used (epoch day). Before the tracking start, statistics count from here. */
     val firstLaunchEpochDay: Long,
+    /** "שערי מטבע": the editable rates that turn a foreign amount into a shekel estimate. */
+    val fxRates: FxRates = FxRates.DEFAULT,
+    /** Daily check that automatic capture still works ("לא נקלטו הוצאות כבר N ימים"). */
+    val captureWatchdogEnabled: Boolean = true,
+    /** When the capture watchdog last posted its notification (epoch millis; 0 = never). */
+    val watchdogLastAlertMillis: Long = 0L,
+    /** The calendar year for which the user ticked "עשיתי תיאום מס" (0 = never). */
+    val taxCoordinationYear: Int = 0,
+    /** The calendar year for which the user ticked "עשיתי תיאום דמי ביטוח לאומי" (0 = never). */
+    val insuranceCoordinationYear: Int = 0,
+    /** The calendar year in which the "שני מעסיקים" card was dismissed (0 = never); it returns every January. */
+    val twoEmployersDismissedYear: Int = 0,
+    /** The calendar year whose 5 January "renew the tax coordination" reminder was already sent. */
+    val taxReminderYear: Int = 0,
 ) {
     /**
      * The window statistics use right now. Until the tracking start arrives, everything since the
@@ -90,6 +105,15 @@ class SettingsStore(private val context: Context) {
         /** One-time migration: installs from before the 1.12.2026 default get it applied once. */
         val trackingStartV2Applied = booleanPreferencesKey("tracking_start_v2_applied")
         val firstLaunch = longPreferencesKey("first_launch_epoch_day")
+        val fxUsd = longPreferencesKey("fx_usd_agorot")
+        val fxEur = longPreferencesKey("fx_eur_agorot")
+        val fxGbp = longPreferencesKey("fx_gbp_agorot")
+        val watchdogEnabled = booleanPreferencesKey("capture_watchdog_enabled")
+        val watchdogLastAlert = longPreferencesKey("capture_watchdog_last_alert")
+        val taxCoordinationYear = intPreferencesKey("tax_coordination_year")
+        val insuranceCoordinationYear = intPreferencesKey("insurance_coordination_year")
+        val twoEmployersDismissedYear = intPreferencesKey("two_employers_dismissed_year")
+        val taxReminderYear = intPreferencesKey("tax_reminder_year")
     }
 
     val settings: Flow<Settings> = context.dataStore.data.map { p ->
@@ -110,6 +134,17 @@ class SettingsStore(private val context: Context) {
             workSummaryEnabled = p[Keys.workSummaryEnabled] ?: true,
             trackingStartEpochDay = p[Keys.trackingStart] ?: Settings.DEFAULT_TRACKING_START_EPOCH_DAY,
             firstLaunchEpochDay = p[Keys.firstLaunch] ?: Settings.LEGACY_FIRST_LAUNCH_EPOCH_DAY,
+            fxRates = FxRates(
+                usdAgorot = p[Keys.fxUsd] ?: FxRates.DEFAULT.usdAgorot,
+                eurAgorot = p[Keys.fxEur] ?: FxRates.DEFAULT.eurAgorot,
+                gbpAgorot = p[Keys.fxGbp] ?: FxRates.DEFAULT.gbpAgorot,
+            ),
+            captureWatchdogEnabled = p[Keys.watchdogEnabled] ?: true,
+            watchdogLastAlertMillis = p[Keys.watchdogLastAlert] ?: 0L,
+            taxCoordinationYear = p[Keys.taxCoordinationYear] ?: 0,
+            insuranceCoordinationYear = p[Keys.insuranceCoordinationYear] ?: 0,
+            twoEmployersDismissedYear = p[Keys.twoEmployersDismissedYear] ?: 0,
+            taxReminderYear = p[Keys.taxReminderYear] ?: 0,
         )
     }
 
@@ -129,6 +164,23 @@ class SettingsStore(private val context: Context) {
     suspend fun setWeeklyIncomeGoal(agorot: Long) = context.dataStore.edit { it[Keys.weeklyIncomeGoal] = agorot.coerceAtLeast(0L) }
     suspend fun setWorkSummaryEnabled(v: Boolean) = context.dataStore.edit { it[Keys.workSummaryEnabled] = v }
     suspend fun setTrackingStart(epochDay: Long) = context.dataStore.edit { it[Keys.trackingStart] = epochDay }
+
+    suspend fun setFxRates(rates: FxRates) = context.dataStore.edit {
+        it[Keys.fxUsd] = rates.usdAgorot.coerceAtLeast(0L)
+        it[Keys.fxEur] = rates.eurAgorot.coerceAtLeast(0L)
+        it[Keys.fxGbp] = rates.gbpAgorot.coerceAtLeast(0L)
+    }
+    suspend fun setCaptureWatchdogEnabled(v: Boolean) = context.dataStore.edit { it[Keys.watchdogEnabled] = v }
+    suspend fun setWatchdogLastAlert(millis: Long) = context.dataStore.edit { it[Keys.watchdogLastAlert] = millis }
+
+    /** Ticks / unticks "עשיתי תיאום מס" for [year] (the state is per calendar year). */
+    suspend fun setTaxCoordination(year: Int, done: Boolean) = context.dataStore.edit { it[Keys.taxCoordinationYear] = if (done) year else 0 }
+
+    /** Ticks / unticks "עשיתי תיאום דמי ביטוח לאומי" for [year]. */
+    suspend fun setInsuranceCoordination(year: Int, done: Boolean) = context.dataStore.edit { it[Keys.insuranceCoordinationYear] = if (done) year else 0 }
+
+    suspend fun setTwoEmployersDismissed(year: Int) = context.dataStore.edit { it[Keys.twoEmployersDismissedYear] = year }
+    suspend fun setTaxReminderYear(year: Int) = context.dataStore.edit { it[Keys.taxReminderYear] = year }
 
     /**
      * Called at startup. Makes sure the tracking start exists and, once per install, moves it to

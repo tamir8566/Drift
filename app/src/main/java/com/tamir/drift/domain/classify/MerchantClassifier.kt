@@ -6,16 +6,28 @@ import com.tamir.drift.domain.model.MerchantRuleModel
 /**
  * Assigns a category to a merchant name using keyword rules.
  *
- * User-defined rules win over seeded rules; among rules of the same kind the longest
- * keyword wins (more specific). Matching is case-insensitive and ignores punctuation,
- * so "Rav-Kav", "רב קו" and "רב-קו" all behave the same.
+ * Built-in (seeded) rules are keywords: they match anywhere in the merchant name (short keywords
+ * of ≤ 3 characters need a whole word), the longest keyword wins.
+ *
+ * Learned rules (the user changed a category) are whole merchants, stored as a [MerchantKey]:
+ * they match by equality, or as a prefix on a word boundary ("שופרסל דיל" also covers
+ * "שופרסל דיל נתניה") — never by "contains". An exact learned rule always wins. A learned prefix
+ * wins over the built-in rules, except when a built-in keyword is a more specific continuation of
+ * it: a merchant the user named "סופר" does not take over "סופר פארם".
  */
 class MerchantClassifier(rules: List<MerchantRuleModel>) {
 
-    private val sorted = rules
-        .map { it.copy(keyword = normalize(it.keyword)) }
+    private val learned = rules
+        .filter { it.isUserDefined }
+        .map { it.copy(keyword = MerchantKey.normalize(it.keyword)) }
         .filter { it.keyword.isNotBlank() }
-        .sortedWith(compareByDescending<MerchantRuleModel> { it.isUserDefined }.thenByDescending { it.keyword.length })
+        .sortedByDescending { it.keyword.length }
+
+    private val builtin = rules
+        .filter { !it.isUserDefined }
+        .map { it.copy(keyword = MerchantKey.clean(it.keyword)) }
+        .filter { it.keyword.isNotBlank() }
+        .sortedByDescending { it.keyword.length }
 
     /** Returns the category key, or [CategoryKeys.OTHER] when no rule matches. */
     fun classify(merchant: String?): String = matchRule(merchant)?.categoryKey ?: CategoryKeys.OTHER
@@ -23,12 +35,22 @@ class MerchantClassifier(rules: List<MerchantRuleModel>) {
     /** Returns the matching rule (useful to show the user *why*), or null. */
     fun matchRule(merchant: String?): MerchantRuleModel? {
         if (merchant.isNullOrBlank()) return null
-        val m = normalize(merchant)
-        return sorted.firstOrNull { rule -> matches(m, rule.keyword) }
+        val key = MerchantKey.normalize(merchant)
+        val clean = MerchantKey.clean(merchant)
+
+        learned.firstOrNull { it.keyword == key }?.let { return it }
+
+        // Both lists are sorted by keyword length, so the first match is the most specific one.
+        val prefix = learned.firstOrNull { key.startsWith(it.keyword + " ") }
+        if (prefix != null) {
+            val moreSpecific = builtin.firstOrNull { it.keyword.startsWith(prefix.keyword + " ") && matchesKeyword(clean, it.keyword) }
+            return moreSpecific ?: prefix
+        }
+        return builtin.firstOrNull { matchesKeyword(clean, it.keyword) }
     }
 
     /** Short keywords (≤ 3 chars) must match a whole word to avoid false positives. */
-    private fun matches(merchant: String, keyword: String): Boolean =
+    private fun matchesKeyword(merchant: String, keyword: String): Boolean =
         if (keyword.length <= 3) {
             merchant.split(' ').any { it == keyword }
         } else {
@@ -36,11 +58,6 @@ class MerchantClassifier(rules: List<MerchantRuleModel>) {
         }
 
     companion object {
-        private val punctuation = Regex("""[\-־_.,'"״׳*()\[\]/\\]+""")
-        private val spaces = Regex("""\s+""")
-
-        fun normalize(s: String): String =
-            s.lowercase().replace(punctuation, " ").replace(spaces, " ").trim()
 
         /** Seed rules for common Israeli merchants. Keyword → category. */
         val SEED_RULES: List<MerchantRuleModel> = buildList {

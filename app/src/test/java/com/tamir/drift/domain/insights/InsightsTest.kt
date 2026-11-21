@@ -2,6 +2,7 @@ package com.tamir.drift.domain.insights
 
 import com.tamir.drift.domain.model.CategoryKeys
 import com.tamir.drift.domain.model.TransactionSource
+import com.tamir.drift.domain.model.TxnKind
 import com.tamir.drift.domain.model.TxnSummary
 import com.tamir.drift.domain.time.MonthPeriod
 import org.junit.Assert.assertEquals
@@ -17,8 +18,8 @@ class InsightsTest {
     private val zone: ZoneId = ZoneId.of("Asia/Jerusalem")
     private var nextId = 1L
     private fun at(y: Int, m: Int, d: Int) = LocalDateTime.of(y, m, d, 10, 0).atZone(zone).toInstant().toEpochMilli()
-    private fun tx(merchant: String, amount: Double, ts: Long, cat: String = CategoryKeys.OTHER) =
-        TxnSummary(nextId++, amount, amount, merchant, cat, ts, TransactionSource.SMS)
+    private fun tx(merchant: String, amount: Double, ts: Long, cat: String = CategoryKeys.OTHER, kind: TxnKind = TxnKind.EXPENSE) =
+        TxnSummary(nextId++, amount, amount, merchant, cat, ts, TransactionSource.SMS, kind = kind)
 
     private val now = at(2026, 11, 8)
 
@@ -60,6 +61,69 @@ class InsightsTest {
     fun `excluded merchants are skipped`() {
         val txs = listOf(tx("Netflix", 54.9, at(2026, 9, 12)), tx("Netflix", 54.9, at(2026, 10, 12)))
         assertTrue(SubscriptionDetector.detect(txs, now, excludedMerchants = setOf("netflix")).isEmpty())
+    }
+
+    @Test
+    fun `refunds and transfers are not subscription charges`() {
+        val refunds = listOf(tx("Shop", 50.0, at(2026, 9, 12), kind = TxnKind.REFUND), tx("Shop", 50.0, at(2026, 10, 12), kind = TxnKind.REFUND))
+        assertTrue(SubscriptionDetector.detect(refunds, now).isEmpty())
+        val transfers = listOf(tx("Bank", 500.0, at(2026, 9, 12), kind = TxnKind.TRANSFER), tx("Bank", 500.0, at(2026, 10, 12), kind = TxnKind.TRANSFER))
+        assertTrue(SubscriptionDetector.detect(transfers, now).isEmpty())
+    }
+
+    @Test
+    fun `one merchant under different spellings is one subscription`() {
+        val txs = listOf(tx("NETFLIX.COM 123", 54.9, at(2026, 9, 12)), tx("Netflix com", 54.9, at(2026, 10, 12)))
+        assertEquals(1, SubscriptionDetector.detect(txs, now).size)
+        assertTrue(SubscriptionDetector.detect(txs, now, excludedMerchants = setOf("netflix-com")).isEmpty())
+    }
+
+    // ---- refunds / transfers in the other insights ----
+
+    @Test
+    fun `where to save counts purchases only and nets refunds`() {
+        val period = MonthPeriod(YearMonth.of(2026, 11), zone)
+        val txs = listOf(
+            tx("ארומה 12", 20.0, at(2026, 11, 1)), tx("ארומה", 20.0, at(2026, 11, 2)), tx("ארומה בע\"מ", 20.0, at(2026, 11, 3)),
+            tx("ארומה", 20.0, at(2026, 11, 3), kind = TxnKind.REFUND),
+            tx("זארה", 100.0, at(2026, 11, 1)), tx("זארה", 100.0, at(2026, 11, 2)), tx("זארה", 100.0, at(2026, 11, 3), kind = TxnKind.REFUND),
+            tx("בנק", 10.0, at(2026, 11, 1), kind = TxnKind.TRANSFER), tx("בנק", 10.0, at(2026, 11, 2), kind = TxnKind.TRANSFER), tx("בנק", 10.0, at(2026, 11, 3), kind = TxnKind.TRANSFER),
+        )
+        val r = RecurringPurchaseFinder.find(txs, period)
+        assertEquals(1, r.size)
+        assertEquals(3, r[0].count)
+        assertEquals(40.0, r[0].monthlyTotal, 0.001)
+    }
+
+    @Test
+    fun `top merchants, month history and weekly summary are net of refunds and skip transfers`() {
+        val period = MonthPeriod(YearMonth.of(2026, 11), zone)
+        val txs = listOf(
+            tx("A", 300.0, at(2026, 11, 2), CategoryKeys.CLOTHING),
+            tx("A", 100.0, at(2026, 11, 3), CategoryKeys.CLOTHING, kind = TxnKind.REFUND),
+            tx("B", 150.0, at(2026, 11, 3), CategoryKeys.GROCERIES),
+            tx("C", 900.0, at(2026, 11, 4), CategoryKeys.OTHER, kind = TxnKind.TRANSFER),
+            tx("D", 40.0, at(2026, 11, 4), CategoryKeys.HOME, kind = TxnKind.REFUND),
+        )
+        val top = TopMerchants.rank(txs, period.startMillis, period.endMillis)
+        assertEquals(listOf("A", "B"), top.map { it.merchant })
+        assertEquals(200.0, top[0].total, 0.001)
+        assertEquals(1, top[0].count)
+
+        val month = MonthHistory.lastMonths(txs, YearMonth.of(2026, 11), 1, zone).single()
+        assertEquals(310.0, month.total, 0.001) // 300 − 100 + 150 − 40
+        assertEquals(2, month.count)
+        assertEquals(200.0, month.byCategory[CategoryKeys.CLOTHING]!!, 0.001)
+        assertEquals(0.0, month.byCategory[CategoryKeys.OTHER]!!, 0.001)
+
+        val totals = MonthHistory.categoryTotals(txs, period.startMillis, period.endMillis)
+        assertEquals(-40.0, totals[CategoryKeys.HOME]!!, 0.001)
+
+        val w = WeeklySummaryCalculator.calculate(txs, at(2026, 11, 1), at(2026, 11, 8), 310.0, 5000.0)
+        assertEquals(310.0, w.spent, 0.001)
+        assertEquals(2, w.count)
+        assertEquals(CategoryKeys.CLOTHING, w.topCategoryKey)
+        assertEquals(200.0, w.topCategoryAmount, 0.001)
     }
 
     // ---- where to save ----

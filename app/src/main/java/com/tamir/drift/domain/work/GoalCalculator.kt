@@ -1,5 +1,6 @@
 package com.tamir.drift.domain.work
 
+import com.tamir.drift.domain.format.BarValue
 import com.tamir.drift.domain.model.TxnSummary
 import com.tamir.drift.domain.time.MonthPeriod
 import java.time.DayOfWeek
@@ -35,6 +36,9 @@ data class MonthGoalStatus(
 
     /** PRD: percent of the monthly goal. */
     val percentOfGoal: Double get() = if (goalAgorot > 0) savedAgorot.toDouble() / goalAgorot * 100.0 else 0.0
+
+    /** The one value the goal line draws and its percent prints: saved against the monthly goal. */
+    val bar: BarValue get() = BarValue.of(savedAgorot, goalAgorot)
 
     /** PRD: goal × daysElapsed / daysInMonth. */
     val expectedByNowAgorot: Long get() =
@@ -90,14 +94,26 @@ data class WeekStatus(
     /** PRD: the balance carried to next week — "אתה בפלוס X" (>0) / "חסרים X" (<0). */
     val balanceAgorot: Long get() = carryInAgorot + incomeAgorot - goalAgorot
 
-    /** What this week needs after the carry-over (never negative). */
+    /**
+     * What this week needs after the carry-over (never negative). The week card's bar, its
+     * "X מתוך Y" and its surplus / deficit message all refer to this one goal.
+     */
     val adjustedGoalAgorot: Long get() = (goalAgorot - carryInAgorot).coerceAtLeast(0L)
+
+    /** True when earlier weeks of the month changed this week's goal. */
+    val hasCarry: Boolean get() = carryInAgorot != 0L
+
+    /** True when the surplus of earlier weeks already covers this whole week. */
+    val isCoveredByCarry: Boolean get() = goalAgorot > 0L && carryInAgorot >= goalAgorot
 
     val isSurplus: Boolean get() = balanceAgorot > 0L
     val isDeficit: Boolean get() = balanceAgorot < 0L
 
-    /** Bar fraction of the (unadjusted) weekly goal, 0..1. */
-    val progress: Double get() = if (goalAgorot > 0) (incomeAgorot.toDouble() / goalAgorot).coerceIn(0.0, 1.0) else 0.0
+    /** The one value the week bar draws and its percent prints: income against the adjusted goal. */
+    val bar: BarValue get() = if (isCoveredByCarry) BarValue.ofFraction(1.0) else BarValue.of(incomeAgorot, adjustedGoalAgorot)
+
+    /** Bar fraction of the adjusted weekly goal, 0..1. */
+    val progress: Double get() = bar.fraction.toDouble()
 }
 
 /** One bar of the 6-month history. */
@@ -132,10 +148,12 @@ object GoalCalculator {
             today.isAfter(last) -> daysInMonth
             else -> ChronoUnit.DAYS.between(effectiveStart, today).toInt() + 1
         }
+        // Same cut-off as the budget summary: expenses through the end of today (later days wait).
+        val spentBefore = today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
         return MonthGoalStatus(
             month = month,
             earnedAgorot = earnedIn(shifts, month),
-            spentAgorot = spentIn(transactions, month, zone),
+            spentAgorot = spentIn(transactions, month, zone, spentBefore),
             goalAgorot = goalAgorot,
             daysElapsed = daysElapsed,
             daysInMonth = daysInMonth,
@@ -171,10 +189,15 @@ object GoalCalculator {
         return shifts.filter { it.epochDay in first..last }.sumOf { it.hours }
     }
 
-    /** Σ my share (agorot) of the month's transactions. */
-    fun spentIn(transactions: List<TxnSummary>, month: YearMonth, zone: ZoneId): Long {
+    /**
+     * Σ my share (agorot) of the month's expenses minus its refunds; transfers are not counted.
+     * Only transactions before [beforeMillis] count (default: the whole month).
+     */
+    fun spentIn(transactions: List<TxnSummary>, month: YearMonth, zone: ZoneId, beforeMillis: Long = Long.MAX_VALUE): Long {
         val period = MonthPeriod(month, zone)
-        return transactions.filter { period.contains(it.timestamp) }.sumOf { (it.myShare * 100).roundToLong() }
+        return transactions
+            .filter { period.contains(it.timestamp) && it.timestamp < beforeMillis }
+            .sumOf { (it.net * 100).roundToLong() }
     }
 
     /** PRD: last [months] months ending at [endMonth] (oldest first), saved vs goal. */

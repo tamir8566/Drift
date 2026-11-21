@@ -1,6 +1,14 @@
 package com.tamir.drift.domain.work
 
+import kotlin.math.abs
 import kotlin.math.roundToLong
+
+/**
+ * The rate a shift was paid at: agorot per hour (hourly job) or per day (daily job), and the
+ * Shabbat multiplier. Stored on the shift so a later change of the job's rate does not rewrite
+ * the pay of shifts already worked.
+ */
+data class RateSnapshot(val rateAgorot: Long, val multiplier: Double)
 
 /**
  * PRD: amount = hours × rate × (shabbat ? multiplier : 1); the user may override it manually.
@@ -34,6 +42,22 @@ object ShiftCalculator {
     ): Long = when (payType) {
         PayType.HOURLY -> amount(hours, hourlyRateAgorot, isShabbatRate, shabbatMultiplier)
         PayType.DAILY -> dailyAmount(dailyRateAgorot, isShabbatRate, shabbatMultiplier)
+    }
+
+    /**
+     * The rate to pay an edited shift at: the rate stored on the shift, as long as the user did
+     * not change its job or its hours; otherwise (or for a shift from before rates were stored)
+     * the job's current rate.
+     */
+    fun rateForEdit(current: RateSnapshot, stored: RateSnapshot?, sameJob: Boolean, sameHours: Boolean): RateSnapshot =
+        if (stored != null && sameJob && sameHours) stored else current
+
+    fun sameHours(a: Double, b: Double): Boolean = abs(a - b) < 1e-6
+
+    /** The computed amount for either pay type from one [RateSnapshot] (per hour or per day by [payType]). */
+    fun amount(payType: PayType, hours: Double, rate: RateSnapshot, isShabbatRate: Boolean): Long = when (payType) {
+        PayType.HOURLY -> amount(hours, rate.rateAgorot, isShabbatRate, rate.multiplier)
+        PayType.DAILY -> dailyAmount(rate.rateAgorot, isShabbatRate, rate.multiplier)
     }
 
     /** The stored amount of an hourly shift: the manual override when the user typed one, else the computed value. */

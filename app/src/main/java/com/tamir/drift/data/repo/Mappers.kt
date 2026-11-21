@@ -1,6 +1,7 @@
 package com.tamir.drift.data.repo
 
 import com.tamir.drift.data.db.TransactionEntity
+import com.tamir.drift.data.db.txnKind
 import com.tamir.drift.domain.model.TransactionSource
 import com.tamir.drift.domain.model.TxnSummary
 import kotlin.math.roundToLong
@@ -20,7 +21,11 @@ fun TransactionEntity.toSummary(): TxnSummary = TxnSummary(
     timestamp = timestamp,
     source = runCatching { TransactionSource.valueOf(source) }.getOrDefault(TransactionSource.MANUAL),
     isShared = isShared,
+    kind = txnKind,
 )
 
-/** Parsed (non-unparsed) transactions only, as the domain sees them. */
+/**
+ * Parsed (non-unparsed) transactions only, as the domain sees them. Refunds and transfers are
+ * included with their kind — the calculators subtract the former and ignore the latter.
+ */
 fun List<TransactionEntity>.toSummaries(): List<TxnSummary> = filter { !it.isUnparsed }.map { it.toSummary() }

@@ -10,7 +10,9 @@ import com.tamir.drift.data.repo.Money
 import com.tamir.drift.data.repo.toJobSummaries
 import com.tamir.drift.data.repo.toShiftSummaries
 import com.tamir.drift.di.AppGraph
+import com.tamir.drift.domain.format.BarValue
 import com.tamir.drift.domain.work.GoalCalculator
+import com.tamir.drift.domain.work.JobPicker
 import com.tamir.drift.domain.work.PayType
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -35,8 +37,11 @@ data class JobCardItem(
     val weekAmountAgorot: Long,
     val weeklyGoalAgorot: Long,
 ) {
-    val weekFraction: Double get() = if (weeklyGoalAgorot > 0) (weekAmountAgorot.toDouble() / weeklyGoalAgorot).coerceIn(0.0, 1.0) else 0.0
-    val weekPercent: Int get() = if (weeklyGoalAgorot > 0) (weekAmountAgorot * 100 / weeklyGoalAgorot).toInt() else 0
+    /**
+     * The one value the card's bar draws and its percent prints: this job's income of the
+     * Sunday–Saturday week against the weekly income goal (both printed on the card).
+     */
+    val weekBar: BarValue get() = BarValue.of(weekAmountAgorot, weeklyGoalAgorot)
 }
 
 data class WorkUiState(
@@ -59,7 +64,21 @@ data class WorkUiState(
     val jobs: List<JobEntity> = emptyList(),
     val jobCards: List<JobCardItem> = emptyList(),
     val recentShifts: List<ShiftEntity> = emptyList(),
+    /** How many shifts exist in all (the "כל המשמרות" list shows them). */
+    val totalShifts: Int = 0,
+    /** Every shift by its day (epoch day) — a tap on a calendar day with a shift opens it. */
+    val shiftsByDay: Map<Long, List<ShiftEntity>> = emptyMap(),
     val jobsById: Map<Long, JobEntity> = emptyMap(),
+    /** The main job right now (marked by the user, or picked automatically). */
+    val mainJobId: Long? = null,
+    /** The calendar year the "שני מעסיקים" card speaks about. */
+    val year: Int = LocalDate.now().year,
+    /** Two or more active jobs and the card was not dismissed this year. */
+    val showTwoEmployers: Boolean = false,
+    /** "עשיתי תיאום מס" is ticked for [year]. */
+    val taxCoordinationDone: Boolean = false,
+    /** "עשיתי תיאום דמי ביטוח לאומי" is ticked for [year]. */
+    val insuranceCoordinationDone: Boolean = false,
 )
 
 class WorkViewModel(private val graph: AppGraph) : ViewModel() {
@@ -112,8 +131,16 @@ class WorkViewModel(private val graph: AppGraph) : ViewModel() {
             plannedDays = planned.map { it.date }.toSet(),
             jobs = jobs,
             jobCards = cards,
-            recentShifts = shifts.take(8),
+            recentShifts = shifts.take(RECENT_SHIFTS),
+            totalShifts = shifts.size,
+            shiftsByDay = shifts.groupBy { it.date },
             jobsById = jobs.associateBy { it.id },
+            mainJobId = JobPicker.mainJob(jobs.toJobSummaries(), shifts.toShiftSummaries(), today.toEpochDay())?.id,
+            year = today.year,
+            // The state is per calendar year, so the card comes back by itself every January.
+            showTwoEmployers = jobs.count { it.isActive } >= 2 && settings.twoEmployersDismissedYear != today.year,
+            taxCoordinationDone = settings.taxCoordinationYear == today.year,
+            insuranceCoordinationDone = settings.insuranceCoordinationYear == today.year,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), WorkUiState())
 
@@ -124,15 +151,35 @@ class WorkViewModel(private val graph: AppGraph) : ViewModel() {
         viewModelScope.launch { graph.work.togglePlanned(date) }
     }
 
-    /** [rateShekels] is per hour or per day according to [payType]; [travelShekels] is the reimbursement per shift (0 = none). */
-    fun addJob(name: String, payType: PayType, rateShekels: Double, multiplier: Double, travelShekels: Double) {
+    fun setTaxCoordination(done: Boolean) {
+        viewModelScope.launch { graph.settings.setTaxCoordination(LocalDate.now(zone).year, done) }
+    }
+
+    fun setInsuranceCoordination(done: Boolean) {
+        viewModelScope.launch { graph.settings.setInsuranceCoordination(LocalDate.now(zone).year, done) }
+    }
+
+    fun dismissTwoEmployers() {
+        viewModelScope.launch { graph.settings.setTwoEmployersDismissed(LocalDate.now(zone).year) }
+    }
+
+    /**
+     * [rateShekels] is per hour or per day according to [payType]; [travelShekels] is the reimbursement
+     * per shift (0 = none). [main] marks the new job as the main one (and unmarks every other).
+     */
+    fun addJob(name: String, payType: PayType, rateShekels: Double, multiplier: Double, travelShekels: Double, main: Boolean) {
         viewModelScope.launch {
-            graph.work.addJob(name, payType, Money.toAgorot(rateShekels), multiplier, Money.toAgorot(travelShekels))
+            val id = graph.work.addJob(name, payType, Money.toAgorot(rateShekels), multiplier, Money.toAgorot(travelShekels))
+            if (main) graph.work.setMainJob(id)
         }
     }
 
-    /** Changing the job's travel amount affects new shifts only; saved shifts keep their stored travel. */
-    fun updateJob(job: JobEntity, name: String, payType: PayType, rateShekels: Double, multiplier: Double, travelShekels: Double) {
+    /**
+     * Changing the job's rate or travel amount affects new shifts only; saved shifts keep the rate
+     * and travel stored on them. [main] on marks this job as the main one (exactly one main);
+     * off removes its mark, and the automatic choice applies again.
+     */
+    fun updateJob(job: JobEntity, name: String, payType: PayType, rateShekels: Double, multiplier: Double, travelShekels: Double, main: Boolean) {
         val rate = Money.toAgorot(rateShekels)
         viewModelScope.launch {
             graph.work.updateJob(
@@ -145,7 +192,12 @@ class WorkViewModel(private val graph: AppGraph) : ViewModel() {
                     travelPerShiftAgorot = Money.toAgorot(travelShekels).coerceAtLeast(0L),
                 ),
             )
+            if (main) graph.work.setMainJob(job.id) else graph.work.clearMainJob(job.id)
         }
+    }
+
+    private companion object {
+        const val RECENT_SHIFTS = 8
     }
 
     fun setJobActive(id: Long, active: Boolean) {

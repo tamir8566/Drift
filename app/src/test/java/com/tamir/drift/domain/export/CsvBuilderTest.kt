@@ -13,12 +13,12 @@ class CsvBuilderTest {
     fun `csv has bom, header and escaped fields`() {
         val zone = ZoneId.of("Asia/Jerusalem")
         val t = TxnSummary(1, 180.0, 60.0, "וולט, פיצה", CategoryKeys.EATING_OUT, 1_762_600_000_000L, TransactionSource.GPAY, isShared = true)
-        val csv = CsvBuilder.build(listOf(CsvBuilder.Row(t, "אוכל בחוץ", "עם \"חברים\"")), listOf("תאריך", "בית עסק", "קטגוריה", "סכום", "שלי", "משותף", "מקור", "הערה"), zone)
+        val csv = CsvBuilder.build(listOf(CsvBuilder.Row(t, "אוכל בחוץ", "עם \"חברים\"", "הוצאה")), listOf("תאריך", "בית עסק", "קטגוריה", "סכום", "שלי", "משותף", "מקור", "סוג", "הערה"), zone)
         assertTrue(csv.startsWith("﻿"))
         val lines = csv.trim().lines()
         assertEquals(2, lines.size)
         assertTrue(lines[1].contains("\"וולט, פיצה\""))
-        assertTrue(lines[1].contains("180.00,60.00,1,GPAY"))
+        assertTrue(lines[1].contains("180.00,60.00,1,GPAY,הוצאה,"))
         assertTrue(lines[1].endsWith("\"עם \"\"חברים\"\"\""))
     }
 }

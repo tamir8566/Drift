@@ -7,12 +7,13 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.tamir.drift.R
+import com.tamir.drift.data.repo.toJobSummaries
 import com.tamir.drift.data.repo.toShiftSummaries
 import com.tamir.drift.data.repo.toSummaries
-import com.tamir.drift.data.repo.toSummary
 import com.tamir.drift.di.AppGraph
 import com.tamir.drift.domain.time.sinceStart
 import com.tamir.drift.domain.work.GoalCalculator
+import com.tamir.drift.domain.work.JobPicker
 import com.tamir.drift.domain.work.PayType
 import com.tamir.drift.ui.format.Fmt
 import java.time.DayOfWeek
@@ -47,18 +48,20 @@ class WorkSummaryWorker(appContext: Context, params: WorkerParameters) : Corouti
         val settings = graph.settings.current()
         // Tracking start: only shifts and transactions from it on feed the summary.
         val window = settings.trackingWindow
-        val shifts = graph.work.getShifts().toShiftSummaries().sinceStart(window)
+        val allShifts = graph.work.getShifts().toShiftSummaries()
+        val shifts = allShifts.sinceStart(window)
         val startDate = window.startDate
         val week = GoalCalculator.weekStatus(shifts, today, settings.weeklyIncomeGoalAgorot, startDate)
-        val jobs = graph.work.getJobs()
-        val mainJob = (jobs.firstOrNull { it.isActive } ?: jobs.firstOrNull())?.toSummary()
+        // The main job: the one the user marked, else the busiest of the last 30 days, else the oldest.
+        val mainJob = JobPicker.mainJob(graph.work.getJobs().toJobSummaries(), allShifts, today.toEpochDay())
         val month = GoalCalculator.monthStatus(
             shifts, graph.db.transactions().getAll().toSummaries().sinceStart(window, zone), YearMonth.from(today), today, zone,
             settings.monthlySavingGoalAgorot, mainJob?.unitRateAgorot ?: 0L, startDate, mainJob?.payType ?: PayType.HOURLY,
         )
         val ctx = applicationContext
         val track = ctx.getString(if (month.onTrack) R.string.goal_on_track_short else R.string.goal_off_track_short)
-        val text = ctx.getString(R.string.work_summary_text, Fmt.moneyAgorot(week.incomeAgorot), Fmt.moneyAgorot(week.goalAgorot), track)
+        // The same goal the week card shows: the weekly goal after the carry-over from earlier weeks.
+        val text = ctx.getString(R.string.work_summary_text, Fmt.moneyAgorot(week.incomeAgorot), Fmt.moneyAgorot(week.adjustedGoalAgorot), track)
         graph.notifier.notifyWorkSummary(ctx.getString(R.string.work_summary_title), text)
     }
 }

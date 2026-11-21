@@ -1,20 +1,34 @@
 package com.tamir.drift.domain.budget
 
+import com.tamir.drift.domain.format.BarValue
 import com.tamir.drift.domain.model.TxnSummary
 import com.tamir.drift.domain.time.MonthPeriod
+import java.time.DayOfWeek
 import java.time.Instant
-import java.time.temporal.ChronoUnit
+import java.time.temporal.TemporalAdjusters
 
-/** Per-category spend inside a month. All amounts are "my share" (amountMine). */
+/**
+ * Per-category spend inside a month. All amounts are "my share" (amountMine), net of refunds;
+ * transfers are not counted.
+ */
 data class CategorySpend(
     val categoryKey: String,
     val spent: Double,
     /** Null when the user did not set a budget for this category. */
     val budget: Double?,
+    /** Number of purchases (expenses) of the category in the month. */
     val count: Int,
-    /** Share of the month's total spend, 0..1 (used for the bar when no budget is set). */
+    /** Share of the month's spend, 0..1 (used for the bar when no budget is set). */
     val shareOfTotal: Double,
 ) {
+    val hasBudget: Boolean get() = budget != null && budget > 0.0
+
+    /**
+     * The one value the category's bar draws and its percent prints: budget usage when a budget
+     * exists, else the share of the month's spend.
+     */
+    val bar: BarValue get() = if (hasBudget) BarValue(spent, budget ?: 0.0) else BarValue.ofFraction(shareOfTotal)
+
     /** Percent used against the category budget, or null when there is no budget. */
     val percentOfBudget: Double? get() = budget?.takeIf { it > 0 }?.let { spent / it * 100.0 }
 
@@ -40,11 +54,14 @@ data class MonthSummary(
     val previousMonthSpentToSameDay: Double,
     /** Spend of the full previous month. */
     val previousMonthSpent: Double,
-    /** Last 7 days (my share). */
+    /** This Sunday–Saturday week so far (my share) — the same week the work and goal screens use. */
     val weekSpent: Double,
-    /** The 7 days before those. */
+    /** The whole previous Sunday–Saturday week. */
     val previousWeekSpent: Double,
 ) {
+    /** The one value the budget line draws and its percent prints: spent against the total budget. */
+    val bar: BarValue get() = BarValue(spent, totalBudget)
+
     /** PRD: remaining = budget − spent; may be negative (shown in orange). */
     val remaining: Double get() = totalBudget - spent
 
@@ -100,20 +117,29 @@ object BudgetCalculator {
         nowMillis: Long,
         categoryOrder: List<String>,
     ): MonthSummary {
-        val inMonth = transactions.filter { period.contains(it.timestamp) && it.timestamp <= nowMillis }
-        val spent = inMonth.sumOf { it.myShare }
+        val zone = period.zone
+        val today = Instant.ofEpochMilli(nowMillis).atZone(zone).toLocalDate()
+        // "Until now" means through the end of today: an expense dated later today (an edited
+        // date keeps its clock time) must count as soon as it is saved. Later days do not.
+        val todayEnd = today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+
+        val inMonth = transactions.filter { period.contains(it.timestamp) && it.timestamp < todayEnd }
+        val spent = inMonth.sumOf { it.net }
 
         val byCategory = inMonth.groupBy { it.categoryKey }
         val keys = (categoryOrder + byCategory.keys + categoryBudgets.keys).distinct()
+        val spentByKey = keys.associateWith { key -> byCategory[key].orEmpty().sumOf { it.net } }
+        // Shares are taken over the categories that actually cost money, so a category whose
+        // refunds exceed its purchases is 0% and the others still add up to 100%.
+        val positiveTotal = spentByKey.values.sumOf { it.coerceAtLeast(0.0) }
         val categories = keys.map { key ->
-            val list = byCategory[key].orEmpty()
-            val catSpent = list.sumOf { it.myShare }
+            val catSpent = spentByKey[key] ?: 0.0
             CategorySpend(
                 categoryKey = key,
                 spent = catSpent,
                 budget = categoryBudgets[key],
-                count = list.size,
-                shareOfTotal = if (spent > 0) catSpent / spent else 0.0,
+                count = byCategory[key].orEmpty().count { it.isExpense },
+                shareOfTotal = if (positiveTotal > 0) catSpent.coerceAtLeast(0.0) / positiveTotal else 0.0,
             )
         }.sortedByDescending { it.spent }
 
@@ -122,21 +148,21 @@ object BudgetCalculator {
         val prevSameDayEnd = previous.endOfDayMillis(dayOfMonth.coerceAtMost(previous.daysInMonth))
         val previousToSameDay = transactions
             .filter { previous.contains(it.timestamp) && it.timestamp <= prevSameDayEnd }
-            .sumOf { it.myShare }
-        val previousFull = transactions.filter { previous.contains(it.timestamp) }.sumOf { it.myShare }
+            .sumOf { it.net }
+        val previousFull = transactions.filter { previous.contains(it.timestamp) }.sumOf { it.net }
 
-        val zone = period.zone
-        val todayEnd = Instant.ofEpochMilli(nowMillis).atZone(zone).toLocalDate().plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
-        val weekStart = todayEnd - ChronoUnit.DAYS.duration.toMillis() * 7
-        val prevWeekStart = weekStart - ChronoUnit.DAYS.duration.toMillis() * 7
-        val weekSpent = transactions.filter { it.timestamp in weekStart until todayEnd }.sumOf { it.myShare }
-        val prevWeekSpent = transactions.filter { it.timestamp in prevWeekStart until weekStart }.sumOf { it.myShare }
+        // "השבוע" = the Sunday–Saturday week of today, up to the end of today.
+        val sunday = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.SUNDAY))
+        val weekStart = sunday.atStartOfDay(zone).toInstant().toEpochMilli()
+        val prevWeekStart = sunday.minusDays(7).atStartOfDay(zone).toInstant().toEpochMilli()
+        val weekSpent = transactions.filter { it.timestamp in weekStart until todayEnd }.sumOf { it.net }
+        val prevWeekSpent = transactions.filter { it.timestamp in prevWeekStart until weekStart }.sumOf { it.net }
 
         return MonthSummary(
             period = period,
             totalBudget = totalBudget,
             spent = spent,
-            transactionCount = inMonth.size,
+            transactionCount = inMonth.count { it.isExpense },
             dayOfMonth = dayOfMonth,
             daysInMonth = period.daysInMonth,
             categories = categories,

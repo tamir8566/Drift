@@ -1,5 +1,11 @@
 package com.tamir.drift.ui.screens.home
 
+import android.Manifest
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -19,7 +25,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -27,9 +38,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tamir.drift.R
+import com.tamir.drift.capture.CaptureStatus
 import com.tamir.drift.domain.budget.CategorySpend
+import com.tamir.drift.domain.format.BarValue
 import com.tamir.drift.ui.LocalAppGraph
 import com.tamir.drift.ui.components.BudgetLine
 import com.tamir.drift.ui.components.CategoryCard
@@ -45,7 +61,7 @@ import com.tamir.drift.ui.driftViewModel
 import com.tamir.drift.ui.format.Fmt
 import com.tamir.drift.ui.theme.DriftColors
 import com.tamir.drift.ui.theme.DriftType
-import kotlin.math.roundToInt
+import kotlin.math.abs
 
 /** Home — the mockup in design/Final.dc.html. */
 @Composable
@@ -53,8 +69,10 @@ fun HomeScreen(
     onOpenCategory: (String) -> Unit,
     onOpenTransaction: (Long) -> Unit,
     onOpenAll: () -> Unit,
+    onOpenWhere: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenSearch: () -> Unit,
+    onOpenUnparsed: () -> Unit,
     onOpenBudget: () -> Unit,
     onOpenGoal: () -> Unit,
 ) {
@@ -63,6 +81,28 @@ fun HomeScreen(
     val state by vm.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val summary = state.summary
+
+    // Capture watchdog: the two permissions automatic capture needs, re-read on every return to the app.
+    var refresh by remember { mutableIntStateOf(0) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) refresh++ }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    val listenerOn = remember(refresh) { CaptureStatus.listenerEnabled(context) }
+    val smsMissing = remember(refresh, state.smsCaptureConfigured) { state.smsCaptureConfigured && !CaptureStatus.smsGranted(context) }
+    val smsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        refresh++
+        // Denied for good → the only way left is the app's page in the system settings.
+        if (!granted) {
+            runCatching {
+                context.startActivity(
+                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                )
+            }
+        }
+    }
 
     LazyColumn(
         Modifier.fillMaxSize().statusBarsPadding(),
@@ -81,6 +121,35 @@ fun HomeScreen(
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     GlassIconButton(DriftIcons.Search, stringResource(R.string.nav_search), onOpenSearch)
                     GlassIconButton(DriftIcons.Menu, stringResource(R.string.nav_settings), onOpenSettings)
+                }
+            }
+        }
+
+        // Attention strip: at most two quiet rows, only when something needs the user.
+        val unparsed = state.unparsedCount
+        if (unparsed > 0 || !listenerOn || smsMissing) {
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (unparsed > 0) {
+                        AttentionRow(
+                            text = if (unparsed == 1) stringResource(R.string.home_unparsed_one) else stringResource(R.string.home_unparsed_many, unparsed),
+                            action = stringResource(R.string.home_unparsed_action),
+                            onClick = onOpenUnparsed,
+                        )
+                    }
+                    if (!listenerOn) {
+                        AttentionRow(
+                            text = stringResource(R.string.home_capture_off),
+                            action = stringResource(R.string.home_capture_action),
+                            onClick = { runCatching { context.startActivity(CaptureStatus.listenerSettingsIntent()) } },
+                        )
+                    } else if (smsMissing) {
+                        AttentionRow(
+                            text = stringResource(R.string.home_sms_off),
+                            action = stringResource(R.string.home_capture_action),
+                            onClick = { smsLauncher.launch(Manifest.permission.RECEIVE_SMS) },
+                        )
+                    }
                 }
             }
         }
@@ -110,14 +179,15 @@ fun HomeScreen(
                     )
                 }
                 Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    val pct = summary?.percentUsed ?: 0.0
+                    // One value for the line and for the percent next to it.
+                    val bar = summary?.bar ?: BarValue.EMPTY
                     BudgetLine(
-                        fraction = (pct / 100.0).toFloat(),
-                        color = if (over) DriftColors.Orange else DriftColors.Lime,
+                        fraction = bar.fraction,
+                        color = if (over || bar.isOver) DriftColors.Orange else DriftColors.Lime,
                         modifier = Modifier.weight(1f),
                     )
                     Text(
-                        "${Fmt.percent(pct)} · ${stringResource(R.string.out_of, Fmt.money(summary?.spent ?: 0.0), Fmt.money(summary?.totalBudget ?: 0.0))}",
+                        "${Fmt.percent(bar)} · ${stringResource(R.string.out_of, Fmt.signedMoney(summary?.spent ?: 0.0), Fmt.money(summary?.totalBudget ?: 0.0))}",
                         style = DriftType.Label12, color = DriftColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
                 }
@@ -129,7 +199,7 @@ fun HomeScreen(
             val perDay = summary?.allowedPerDay ?: 0.0
             val perDayText = if (summary?.isOverBudget == true) stringResource(R.string.home_exceeded)
             else stringResource(R.string.amount_with_shekel, Fmt.money(perDay))
-            val weekText = stringResource(R.string.amount_with_shekel, Fmt.money(summary?.weekSpent ?: 0.0))
+            val weekText = stringResource(R.string.amount_with_shekel, Fmt.signedMoney(summary?.weekSpent ?: 0.0))
             val monthChange = summary?.monthChangePercent
             val prevMonthName = Fmt.monthShort(context, state.month.minusMonths(1).monthValue)
             val monthText = monthChange?.let { Fmt.change(it) } ?: stringResource(R.string.home_no_data_compare)
@@ -156,7 +226,9 @@ fun HomeScreen(
             ) {
                 Box(Modifier.size(8.dp).background(if (state.savedThisMonth >= 0) DriftColors.Lime else DriftColors.Orange, CircleShape))
                 Text(
-                    stringResource(R.string.home_earned_saved, Fmt.money(state.earnedThisMonth), Fmt.money(state.savedThisMonth)),
+                    // A negative saving is said in words ("בחוסר X ₪"), not with a minus sign.
+                    if (state.savedThisMonth >= 0) stringResource(R.string.home_earned_saved, Fmt.money(state.earnedThisMonth), Fmt.money(state.savedThisMonth))
+                    else stringResource(R.string.home_earned_short, Fmt.money(state.earnedThisMonth), Fmt.money(abs(state.savedThisMonth))),
                     style = DriftType.Label12, color = DriftColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
@@ -167,7 +239,7 @@ fun HomeScreen(
         // Category grid 2×2
         item {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                SectionHeader(stringResource(R.string.home_by_category), stringResource(R.string.all), onAction = onOpenAll)
+                SectionHeader(stringResource(R.string.home_by_category), stringResource(R.string.all), onAction = onOpenWhere)
                 CategoryGrid(state.topCategories, onOpenCategory = onOpenCategory, names = { state.categories[it]?.name ?: it }, colors = { state.categories[it].composeColor() })
             }
         }
@@ -186,6 +258,20 @@ fun HomeScreen(
     }
 }
 
+/** One quiet line of the attention strip: an orange dot, what is wrong, and the lime action that fixes it. */
+@Composable
+private fun AttentionRow(text: String, action: String, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(onClick = onClick).padding(horizontal = 4.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Box(Modifier.size(8.dp).background(DriftColors.Orange, CircleShape))
+        Text(text, style = DriftType.Label12, color = DriftColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        Text(action, style = DriftType.Link12, color = DriftColors.Lime, maxLines = 1)
+    }
+}
+
 /** Fixed 2×2 grid (no horizontal scrolling): two rows of two equal-width cards, gap 10. */
 @Composable
 fun CategoryGrid(
@@ -199,16 +285,22 @@ fun CategoryGrid(
         rows.forEach { row ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 row.forEach { c ->
-                    CategoryCard(
-                        name = names(c.categoryKey),
-                        amountText = stringResource(R.string.amount_with_shekel, Fmt.money(c.spent)),
-                        percent = c.displayPercent.roundToInt(),
-                        barFraction = (c.displayPercent / 100.0).toFloat(),
-                        color = colors(c.categoryKey),
-                        warning = c.isWarning,
-                        modifier = Modifier.weight(1f),
-                        onClick = { onOpenCategory(c.categoryKey) },
-                    )
+                    // Keyed by category: when the order changes, a bar animates from its own
+                    // previous value and not from the category that stood in this cell before.
+                    key(c.categoryKey) {
+                        val budget = c.budget
+                        CategoryCard(
+                            name = names(c.categoryKey),
+                            amountText = stringResource(R.string.amount_with_shekel, Fmt.signedMoney(c.spent)),
+                            bar = c.bar,
+                            referenceText = if (c.hasBudget && budget != null) stringResource(R.string.savings_of_target, Fmt.money(budget))
+                            else stringResource(R.string.category_share_of_total),
+                            color = colors(c.categoryKey),
+                            warning = c.isWarning || (c.hasBudget && c.bar.isOver),
+                            modifier = Modifier.weight(1f),
+                            onClick = { onOpenCategory(c.categoryKey) },
+                        )
+                    }
                 }
                 if (row.size == 1) Spacer(Modifier.weight(1f))
             }

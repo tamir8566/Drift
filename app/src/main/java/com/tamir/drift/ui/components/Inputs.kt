@@ -10,8 +10,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -145,7 +147,10 @@ fun SecondaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modi
     }
 }
 
-/** Themed alert dialog. */
+/**
+ * Themed alert dialog. The content scrolls vertically (once, here), so a long form stays reachable
+ * above the keyboard — callers must not add their own vertical scroll inside.
+ */
 @Composable
 fun DriftDialog(
     title: String,
@@ -163,7 +168,7 @@ fun DriftDialog(
         textContentColor = DriftColors.TextSecondary,
         shape = RoundedCornerShape(22.dp),
         title = { Text(title, style = DriftType.Title, color = DriftColors.Text) },
-        text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { content() } },
+        text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) { content() } },
         confirmButton = {
             TextButton(onClick = onConfirm, enabled = confirmEnabled) {
                 Text(confirmText, style = DriftType.RowTitle, color = if (confirmEnabled) DriftColors.Lime else DriftColors.TextDim)

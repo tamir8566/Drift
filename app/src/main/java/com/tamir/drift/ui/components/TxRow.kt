@@ -8,7 +8,10 @@ import androidx.compose.ui.res.stringResource
 import com.tamir.drift.R
 import com.tamir.drift.data.db.CategoryEntity
 import com.tamir.drift.data.db.TransactionEntity
+import com.tamir.drift.data.db.txnKind
 import com.tamir.drift.domain.model.TransactionSource
+import com.tamir.drift.domain.model.TxnKind
+import com.tamir.drift.domain.money.MoneyText
 import com.tamir.drift.ui.format.Fmt
 import com.tamir.drift.ui.theme.DriftColors
 
@@ -19,7 +22,11 @@ fun sourceName(source: String): String = when (source) {
     else -> stringResource(R.string.source_manual)
 }
 
-/** Maps a stored transaction to the design's row: "merchant" / "today · Google Pay · category" / amount. */
+/**
+ * Maps a stored transaction to the design's row: "merchant" / "today · Google Pay · category" / amount.
+ * A refund is shown in lime with a minus and a "זיכוי" tag; a transfer is dimmed with "לא נספר";
+ * a foreign charge shows "≈" before its estimated shekel amount and the original amount as a tag.
+ */
 @Composable
 fun TxRow(
     tx: TransactionEntity,
@@ -50,13 +57,31 @@ fun TxRow(
         add(sourceName(tx.source))
         add(categoryName)
     }
+    val kind = tx.txnKind
+    // A refund reads as money coming back: lime, with a minus in front of the digits.
+    val digits = Fmt.moneyExact(tx.amountFull).let { if (kind == TxnKind.REFUND) MoneyText.negative(it) else it }
+    // "≈" marks a shekel amount that is only an estimate of a foreign charge.
+    val amount = (if (tx.isEstimate) "≈ " else "") + stringResource(R.string.amount_with_shekel, digits)
+    val origAmount = tx.origAmountMinor
+    val tags = buildList {
+        when (kind) {
+            TxnKind.REFUND -> add(stringResource(R.string.kind_refund))
+            TxnKind.TRANSFER -> add(stringResource(R.string.kind_transfer))
+            TxnKind.EXPENSE -> Unit
+        }
+        if (origAmount != null && tx.origCurrency != null) add(Fmt.foreign(origAmount, tx.origCurrency))
+        if (tx.isShared) add(stringResource(R.string.shared_tag, Fmt.moneyExact(tx.amountMine)))
+    }
     TransactionRow(
         title = tx.merchant.ifBlank { stringResource(R.string.no_merchant) },
         meta = metaParts.joinToString(" · "),
-        amountText = stringResource(R.string.amount_with_shekel, Fmt.moneyExact(tx.amountFull)),
+        amountText = amount,
         dotColor = dot,
-        sharedTag = if (tx.isShared) stringResource(R.string.shared_tag, Fmt.moneyExact(tx.amountMine)) else null,
+        sharedTag = if (tags.isEmpty()) null else tags.joinToString(" · "),
         modifier = modifier,
+        amountColor = if (kind == TxnKind.REFUND) DriftColors.Lime else DriftColors.Text,
+        tagColor = if (kind == TxnKind.TRANSFER) DriftColors.TextSecondary else DriftColors.Lime,
+        dimmed = kind == TxnKind.TRANSFER,
         onClick = onClick,
     )
 }

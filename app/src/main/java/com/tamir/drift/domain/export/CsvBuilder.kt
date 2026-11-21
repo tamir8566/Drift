@@ -14,6 +14,8 @@ object CsvBuilder {
         val txn: TxnSummary,
         val categoryName: String,
         val note: String?,
+        /** Display name of the transaction kind (expense / refund / not counted). */
+        val kindLabel: String = "",
     )
 
     /**
@@ -35,6 +37,7 @@ object CsvBuilder {
                     format(t.myShare),
                     if (t.isShared) "1" else "0",
                     t.source.name,
+                    row.kindLabel,
                     row.note.orEmpty(),
                 ).joinToString(",") { escape(it) },
             )

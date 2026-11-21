@@ -39,6 +39,12 @@ import com.tamir.drift.R
 import com.tamir.drift.data.db.ShiftEntity
 import com.tamir.drift.data.db.isDaily
 import com.tamir.drift.data.repo.Money
+import com.tamir.drift.data.repo.currentRate
+import com.tamir.drift.data.repo.storedRate
+import com.tamir.drift.data.repo.toJobSummaries
+import com.tamir.drift.data.repo.toShiftSummaries
+import com.tamir.drift.domain.money.AmountInput
+import com.tamir.drift.domain.work.JobPicker
 import com.tamir.drift.domain.work.PayType
 import com.tamir.drift.domain.work.ShiftCalculator
 import com.tamir.drift.ui.LocalAppGraph
@@ -77,7 +83,9 @@ private const val MODE_HOURS = "hours"
  * with a "שכר A ₪ + נסיעות B ₪" line; the wage stays editable on its own row. Travel is a flat
  * amount: the Shabbat multiplier and a manual wage do not change it.
  * With [shiftId] the same screen edits an existing shift (and can delete it); its stored travel
- * is kept as it was saved.
+ * is kept as it was saved, and its pay keeps the rate stored on the shift as long as the job and
+ * the hours are not changed (a new job or new hours take the job's current rate).
+ * A new shift starts with the job most often worked on that weekday (else the last one used).
  */
 @Composable
 fun AddShiftScreen(shiftId: Long?, onDone: () -> Unit) {
@@ -85,6 +93,7 @@ fun AddShiftScreen(shiftId: Long?, onDone: () -> Unit) {
     val scope = rememberCoroutineScope()
     val zone = ZoneId.systemDefault()
     val jobs by graph.work.jobs.collectAsStateWithLifecycle(initialValue = emptyList())
+    val allShifts by graph.work.shifts.collectAsStateWithLifecycle(initialValue = emptyList())
     val activeJobs = jobs.filter { it.isActive }
 
     var existing by remember { mutableStateOf<ShiftEntity?>(null) }
@@ -92,6 +101,8 @@ fun AddShiftScreen(shiftId: Long?, onDone: () -> Unit) {
     var notFound by remember { mutableStateOf(false) }
 
     var jobId by remember { mutableStateOf<Long?>(null) }
+    // Until the user picks a job chip himself, the default job follows the chosen date.
+    var jobTouched by remember { mutableStateOf(false) }
     var date by remember { mutableStateOf(LocalDate.now(zone).toFieldText()) }
     var mode by remember { mutableStateOf(MODE_HOURS) }
     var start by remember { mutableStateOf("") }
@@ -131,7 +142,7 @@ fun AddShiftScreen(shiftId: Long?, onDone: () -> Unit) {
                 shabbat = s.isShabbatRate
                 shabbatTouched = true
                 manual = s.manualAmount
-                if (s.manualAmount) amountText = Fmt.moneyExact(s.amountAgorot).replace(",", "")
+                if (s.manualAmount) amountText = Fmt.fieldAmount(s.amountAgorot)
                 // The stored travel is kept as saved: on with its own amount, or off when the shift had none.
                 travelOn = s.travelAgorot > 0L
                 travelCustom = s.travelAgorot.takeIf { it > 0L }
@@ -140,12 +151,14 @@ fun AddShiftScreen(shiftId: Long?, onDone: () -> Unit) {
             loaded = true
         }
     }
-    // Default job: the first active one.
-    LaunchedEffect(activeJobs) {
-        if (jobId == null) jobId = activeJobs.firstOrNull()?.id
-    }
-
     val dateValue = parseDate(date)
+    // Default job of a new shift: the one most often worked on this weekday, else the last used.
+    LaunchedEffect(jobs, allShifts, dateValue) {
+        if (shiftId == null && !jobTouched) {
+            val day = dateValue ?: LocalDate.now(zone)
+            JobPicker.defaultJobId(day, jobs.toJobSummaries(), allShifts.toShiftSummaries())?.let { jobId = it }
+        }
+    }
     // Saturday → Shabbat rate on by default until the user touches the switch.
     LaunchedEffect(dateValue) {
         if (!shabbatTouched) shabbat = dateValue?.dayOfWeek == DayOfWeek.SATURDAY
@@ -158,16 +171,29 @@ fun AddShiftScreen(shiftId: Long?, onDone: () -> Unit) {
     val hours: Double? = when {
         daily -> 0.0
         mode == MODE_TIMES -> if (startMin != null && endMin != null) ShiftCalculator.hoursBetween(startMin, endMin) else null
-        else -> hoursText.replace(",", ".").toDoubleOrNull()?.takeIf { it > 0.0 }
+        else -> AmountInput.parse(hoursText)?.takeIf { it > 0.0 }
     }
-    val rate = job?.hourlyRateAgorot ?: 0L
-    val dailyRate = job?.dailyRateAgorot ?: 0L
-    val multiplier = job?.shabbatMultiplier ?: 1.5
     val payType = if (daily) PayType.DAILY else PayType.HOURLY
-    val computedAgorot = ShiftCalculator.amount(payType, hours ?: 0.0, rate, dailyRate, shabbat, multiplier)
-    val manualValue = amountText.replace(",", "").toDoubleOrNull()
+    // The rate this shift is paid at — exactly what the repository will use on save: the job's
+    // current rate, or, for an edited shift whose job and hours are unchanged, the rate stored on it.
+    val currentRate = job.currentRate()
+    val edited = existing
+    val storedRate = edited?.storedRate()
+    val payRate = if (edited == null) currentRate else ShiftCalculator.rateForEdit(
+        current = currentRate,
+        stored = storedRate,
+        sameJob = jobId == edited.jobId,
+        sameHours = hours != null && ShiftCalculator.sameHours(hours, edited.hours),
+    )
+    // The per-hour or per-day rate (by pay type) and the Shabbat multiplier shown in the formula.
+    val rate = payRate.rateAgorot
+    val dailyRate = payRate.rateAgorot
+    val multiplier = payRate.multiplier
+    val keptStoredRate = edited != null && storedRate != null && payRate == storedRate && storedRate != currentRate
+    val computedAgorot = ShiftCalculator.amount(payType, hours ?: 0.0, payRate, shabbat)
+    val manualValue = AmountInput.parse(amountText)
     val manualAgorot = if (manual) manualValue?.let { Money.toAgorot(it) } else null
-    val shownAmount = if (manual) amountText else Fmt.moneyExact(computedAgorot).replace(",", "")
+    val shownAmount = if (manual) amountText else Fmt.fieldAmount(computedAgorot)
     // The wage alone (what is stored as the shift amount), and the travel added on top of it.
     val wageAgorot = if (manual) manualAgorot ?: 0L else computedAgorot
     val jobTravel = job?.travelPerShiftAgorot ?: 0L
@@ -175,12 +201,7 @@ fun AddShiftScreen(shiftId: Long?, onDone: () -> Unit) {
     val showTravel = jobTravel > 0L || travelCustom != null
     val travelEnabled = showTravel && travelOn
     val appliedTravel = ShiftCalculator.travel(travelAmount, travelEnabled)
-    val totalAgorot = ShiftCalculator.dayTotal(
-        payType, hours ?: 0.0, rate, dailyRate, shabbat, multiplier,
-        manualAmountAgorot = if (manual) wageAgorot else null,
-        travelPerShiftAgorot = travelAmount,
-        travelEnabled = travelEnabled,
-    )
+    val totalAgorot = wageAgorot + appliedTravel
     val amountOk = if (manual) manualValue != null && manualValue >= 0.0 else computedAgorot >= 0L
     val timesOk = daily || mode != MODE_TIMES || (startMin != null && endMin != null)
     val hoursOk = daily || (hours != null && hours > 0.0)
@@ -213,6 +234,7 @@ fun AddShiftScreen(shiftId: Long?, onDone: () -> Unit) {
                 // Another job brings its own travel amount; a custom amount belonged to the previous one.
                 if (picked != jobId) travelCustom = null
                 jobId = picked
+                jobTouched = true
             })
         }
 
@@ -269,7 +291,7 @@ fun AddShiftScreen(shiftId: Long?, onDone: () -> Unit) {
                 checked = travelOn,
                 onCheckedChange = { travelOn = it },
                 onEditAmount = {
-                    travelDraft = Fmt.moneyExact(travelAmount).replace(",", "")
+                    travelDraft = Fmt.fieldAmount(travelAmount)
                     editTravel = true
                 },
             )
@@ -326,6 +348,9 @@ fun AddShiftScreen(shiftId: Long?, onDone: () -> Unit) {
                     else -> stringResource(R.string.shift_amount_formula, ShiftCalculator.formatHours(hours ?: 0.0), Fmt.moneyExact(rate))
                 }
                 Text(formula, style = DriftType.Label11, color = DriftColors.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (keptStoredRate && !manual) {
+                    Text(stringResource(R.string.shift_rate_kept), style = DriftType.Label11, color = DriftColors.TextDim, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
                 if (manual) {
                     Text(
                         stringResource(R.string.shift_amount_reset), style = DriftType.Link12, color = DriftColors.Lime,
@@ -373,7 +398,7 @@ fun AddShiftScreen(shiftId: Long?, onDone: () -> Unit) {
 
     // Travel amount for this shift only (the job keeps its own amount).
     if (editTravel) {
-        val draftValue = travelDraft.replace(",", "").toDoubleOrNull()
+        val draftValue = AmountInput.parse(travelDraft)
         val draftOk = draftValue != null && draftValue >= 0.0
         DriftDialog(
             title = stringResource(R.string.shift_travel_edit_title),

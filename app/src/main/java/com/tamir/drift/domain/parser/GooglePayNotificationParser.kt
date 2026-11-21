@@ -21,12 +21,12 @@ class GooglePayNotificationParser : SourceParser {
 
     private val inlineMerchant = listOf(
         Regex("""(?:ב-|אצל|at)\s?(.+?)(?=\s+(?:with|עם|באמצעות)\b|[.\n]|$)""", RegexOption.IGNORE_CASE),
-        Regex("""(?:₪|ILS|NIS)\s?[\d.,]+\s+ב(?!אמצעות)(\S.*?)(?=\s+(?:with|עם|באמצעות)\b|[.\n]|$)"""),
+        Regex("""(?:₪|ILS|NIS|USD|EUR|GBP|[$FOREIGN_SIGNS])\s?[\d.,]+\s+ב(?!אמצעות)(\S.*?)(?=\s+(?:with|עם|באמצעות)\b|[.\n]|$)"""),
     )
 
     /** Lines that are clearly not a merchant (amount lines, card lines, generic titles). */
     private val notMerchantLine = Regex(
-        """^(?:₪|ILS|NIS|\d|שילמת|paid|you paid|תשלום|payment|google pay|google wallet|ארנק google|עסקה|transaction)""",
+        """^(?:₪|ILS|NIS|USD|EUR|GBP|[$FOREIGN_SIGNS]|\d|שילמת|paid|you paid|תשלום|payment|google pay|google wallet|ארנק google|עסקה|transaction)""",
         RegexOption.IGNORE_CASE,
     )
 
@@ -52,5 +52,10 @@ class GooglePayNotificationParser : SourceParser {
             else -> ParseStatus.UNPARSED
         }
         return ParsedTransaction(amount?.amount, merchant, digits, amount?.currency, status, name)
+    }
+
+    private companion object {
+        /** "$€£" for use inside a character class (a normal string, so "$" is not a template). */
+        const val FOREIGN_SIGNS = "\$€£"
     }
 }

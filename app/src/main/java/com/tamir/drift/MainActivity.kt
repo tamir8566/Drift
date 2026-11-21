@@ -1,6 +1,7 @@
 package com.tamir.drift
 
 import android.Manifest
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -11,10 +12,12 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import com.tamir.drift.di.AppGraph
+import com.tamir.drift.notify.DeepLink
 import com.tamir.drift.ui.LocalAppGraph
 import com.tamir.drift.ui.nav.DriftApp
 import com.tamir.drift.ui.theme.DriftTheme
@@ -23,20 +26,41 @@ import com.tamir.drift.update.UpdateController
 import com.tamir.drift.update.UpdateDialogHost
 
 class MainActivity : ComponentActivity() {
+
+    /** The screen a tapped notification asked for ([DeepLink]); the navigation host consumes it once. */
+    private val pendingDeepLink = mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         val graph = AppGraph.get(this)
+        // Only a fresh launch: after a rotation the same intent must not navigate again.
+        if (savedInstanceState == null) readDeepLink(intent)
         setContent {
             val updateController = remember { UpdateController() }
             CompositionLocalProvider(LocalAppGraph provides graph, LocalUpdateController provides updateController) {
                 DriftTheme {
                     NotificationPermissionRequest()
-                    DriftApp()
+                    DriftApp(deepLink = pendingDeepLink.value, onDeepLinkConsumed = { pendingDeepLink.value = null })
                     UpdateDialogHost()
                 }
             }
         }
+    }
+
+    /** The activity is singleTask: a notification tapped while the app is open arrives here. */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        readDeepLink(intent)
+    }
+
+    private fun readDeepLink(source: Intent?) {
+        val launch = source ?: return
+        val target = launch.getStringExtra(DeepLink.EXTRA) ?: return
+        // Consumed here too, so the extra does not fire again when the activity is recreated.
+        launch.removeExtra(DeepLink.EXTRA)
+        pendingDeepLink.value = target
     }
 }
 

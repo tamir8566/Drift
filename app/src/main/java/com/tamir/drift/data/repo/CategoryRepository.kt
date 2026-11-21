@@ -7,6 +7,7 @@ import com.tamir.drift.data.db.DriftDatabase
 import com.tamir.drift.data.db.MerchantRuleEntity
 import com.tamir.drift.data.db.Origin
 import com.tamir.drift.domain.classify.MerchantClassifier
+import com.tamir.drift.domain.classify.MerchantKey
 import com.tamir.drift.domain.model.CategoryKeys
 import com.tamir.drift.domain.model.MerchantRuleModel
 import kotlinx.coroutines.flow.Flow
@@ -43,10 +44,18 @@ class CategoryRepository(private val context: Context, private val db: DriftData
 
     suspend fun setCategoryBudget(id: String, agorot: Long?) = db.categories().setBudget(id, agorot)
 
-    /** PRD: a manual category change teaches a rule on the merchant that beats the built-in one. */
+    /**
+     * PRD: a manual category change teaches a rule on the merchant that beats the built-in one.
+     * The rule is stored under the merchant's [MerchantKey] and matches by equality / prefix.
+     */
     suspend fun learnRule(merchant: String, categoryId: String) {
-        val keyword = MerchantClassifier.normalize(merchant)
+        val keyword = MerchantKey.normalize(merchant)
         if (keyword.isBlank()) return
+        // An older learned rule for the same merchant stored under another spelling (before the
+        // shared key existed) would compete with the new choice — remove it.
+        db.merchantRules().getAll()
+            .filter { it.origin == Origin.LEARNED && it.keyword != keyword && MerchantKey.normalize(it.keyword) == keyword }
+            .forEach { db.merchantRules().delete(it.keyword) }
         db.merchantRules().upsert(MerchantRuleEntity(keyword, categoryId, Origin.LEARNED))
     }
 

@@ -22,7 +22,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ShiftEntity::class,
         PlannedDayEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
 abstract class DriftDatabase : RoomDatabase() {
@@ -96,9 +96,37 @@ abstract class DriftDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v4 → v5:
+         *  - transactions: `kind` (EXPENSE / REFUND / TRANSFER; existing rows are expenses), the
+         *    original foreign amount (`origAmountMinor`, `origCurrency`) and `isEstimate`;
+         *  - shifts: the rate and Shabbat multiplier the shift was paid at (nullable). Existing
+         *    shifts are given their job's rate as it is at migration time, so that from now on a
+         *    change of the job's rate no longer rewrites them; a shift whose job row is gone stays
+         *    NULL and falls back to the current rate;
+         *  - jobs: `isMain` (no job is marked; the automatic choice applies until the user marks one).
+         */
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `transactions` ADD COLUMN `kind` TEXT NOT NULL DEFAULT 'EXPENSE'")
+                db.execSQL("ALTER TABLE `transactions` ADD COLUMN `origAmountMinor` INTEGER")
+                db.execSQL("ALTER TABLE `transactions` ADD COLUMN `origCurrency` TEXT")
+                db.execSQL("ALTER TABLE `transactions` ADD COLUMN `isEstimate` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `shifts` ADD COLUMN `rateAgorotAtShift` INTEGER")
+                db.execSQL("ALTER TABLE `shifts` ADD COLUMN `multiplierAtShift` REAL")
+                db.execSQL("ALTER TABLE `jobs` ADD COLUMN `isMain` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL(
+                    "UPDATE `shifts` SET " +
+                        "`rateAgorotAtShift` = (SELECT CASE WHEN `jobs`.`payType` = 'DAILY' THEN `jobs`.`dailyRateAgorot` " +
+                        "ELSE `jobs`.`hourlyRateAgorot` END FROM `jobs` WHERE `jobs`.`id` = `shifts`.`jobId`), " +
+                        "`multiplierAtShift` = (SELECT `jobs`.`shabbatMultiplier` FROM `jobs` WHERE `jobs`.`id` = `shifts`.`jobId`)",
+                )
+            }
+        }
+
         fun build(context: Context): DriftDatabase =
             Room.databaseBuilder(context.applicationContext, DriftDatabase::class.java, "drift.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 // Safety net for any other version jump (was already the policy before v2).
                 .fallbackToDestructiveMigration()
                 .build()

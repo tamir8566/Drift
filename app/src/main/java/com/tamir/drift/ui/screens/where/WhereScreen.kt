@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -33,6 +34,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tamir.drift.R
+import com.tamir.drift.domain.format.BarValue
 import com.tamir.drift.ui.LocalAppGraph
 import com.tamir.drift.ui.components.BAR_ANIM_MS
 import com.tamir.drift.ui.components.Chip
@@ -82,7 +84,7 @@ fun WhereScreen(
                 GlassCard(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(Fmt.money(state.total), style = DriftType.Big, color = DriftColors.Text, modifier = Modifier.alignByBaseline())
+                            Text(Fmt.signedMoney(state.total), style = DriftType.Big, color = DriftColors.Text, modifier = Modifier.alignByBaseline())
                             Text(stringResource(R.string.shekel), style = DriftType.Label13, color = DriftColors.TextSecondary, modifier = Modifier.alignByBaseline())
                         }
                         if (state.slices.isEmpty()) {
@@ -127,19 +129,24 @@ fun WhereScreen(
                         val max = state.months.maxOfOrNull { it.total }?.takeIf { it > 0 } ?: 1.0
                         Row(Modifier.fillMaxWidth().height(120.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Bottom) {
                             state.months.forEach { m ->
-                                val isCurrent = m.yearMonth == state.currentMonth
-                                val target = (m.total / max).toFloat().coerceIn(0.02f, 1f)
-                                val animated by animateFloatAsState(target, tween(BAR_ANIM_MS), label = "monthBar")
-                                Column(Modifier.weight(1f).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Bottom) {
-                                    Text(Fmt.money(m.total), style = DriftType.Tag10, color = DriftColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Spacer(Modifier.height(4.dp))
-                                    Box(
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .fillMaxHeight(animated * 0.78f)
-                                            .clip(RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp))
-                                            .background(if (isCurrent) DriftColors.Lime else DriftColors.Lime.copy(alpha = 0.35f)),
-                                    )
+                                // Keyed by month, so a bar animates from its own previous height.
+                                key(m.yearMonth) {
+                                    val isCurrent = m.yearMonth == state.currentMonth
+                                    // The bar is drawn from the same total its label prints; a month
+                                    // without spend (or with more refunds than purchases) has no bar.
+                                    val target = BarValue(m.total, max).fraction
+                                    val animated by animateFloatAsState(target, tween(BAR_ANIM_MS), label = "monthBar")
+                                    Column(Modifier.weight(1f).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Bottom) {
+                                        Text(Fmt.signedMoney(m.total), style = DriftType.Tag10, color = DriftColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Spacer(Modifier.height(4.dp))
+                                        Box(
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .fillMaxHeight(animated * 0.78f)
+                                                .clip(RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp))
+                                                .background(if (isCurrent) DriftColors.Lime else DriftColors.Lime.copy(alpha = 0.35f)),
+                                        )
+                                    }
                                 }
                             }
                         }

@@ -4,6 +4,7 @@ import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import com.tamir.drift.domain.model.TxnKind
 import com.tamir.drift.domain.work.PayType
 
 /**
@@ -32,7 +33,28 @@ data class TransactionEntity(
     /** Last 4 card digits when the source message had them. */
     val cardLast4: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
+    /**
+     * [TxnKind] name: EXPENSE / REFUND / TRANSFER (stored as text). Amounts stay positive for every
+     * kind; a refund is subtracted and a transfer is ignored by the calculators. Added in v5.
+     */
+    @ColumnInfo(defaultValue = "EXPENSE") val kind: String = TxnKind.EXPENSE.name,
+    /** The amount as charged in a foreign currency, in its minor unit (cents); null for a shekel transaction. Added in v5. */
+    val origAmountMinor: Long? = null,
+    /** "USD" / "EUR" / "GBP"; null for a shekel transaction. Added in v5. */
+    val origCurrency: String? = null,
+    /** True while [amountFull] is only an estimate from the rates table (shown with "≈"). Added in v5. */
+    @ColumnInfo(defaultValue = "0") val isEstimate: Boolean = false,
 )
+
+/** Typed view of [TransactionEntity.kind] (kept outside the entity so Room sees only columns). */
+val TransactionEntity.txnKind: TxnKind get() = TxnKind.from(kind)
+
+/** What the transaction adds to "spent", agorot: +mine for an expense, −mine for a refund, 0 for a transfer. */
+val TransactionEntity.netMineAgorot: Long get() = when (txnKind) {
+    TxnKind.EXPENSE -> amountMine
+    TxnKind.REFUND -> -amountMine
+    TxnKind.TRANSFER -> 0L
+}
 
 @Entity(tableName = "raw_captures", indices = [Index("capturedAt")])
 data class RawCaptureEntity(
@@ -42,7 +64,7 @@ data class RawCaptureEntity(
     val text: String,
     val capturedAt: Long,
     val transactionId: Long? = null,
-    /** Parser outcome for the debug log: PARSED / AMOUNT_ONLY / UNPARSED / DUPLICATE / IGNORED. */
+    /** Parser outcome for the debug log: PARSED / REFUND / UNPARSED / DUPLICATE / "FAILED: reason". */
     val result: String = "",
 )
 
@@ -134,6 +156,8 @@ data class JobEntity(
     @ColumnInfo(defaultValue = "0") val dailyRateAgorot: Long = 0L,
     /** Travel reimbursement ("החזר נסיעות") per shift, agorot; 0 = none. Added in v4. */
     @ColumnInfo(defaultValue = "0") val travelPerShiftAgorot: Long = 0L,
+    /** "עבודה ראשית": the job the user marked as the main one (at most one row). Added in v5. */
+    @ColumnInfo(defaultValue = "0") val isMain: Boolean = false,
 )
 
 /** Typed view of [JobEntity.payType] (kept outside the entity so Room sees only columns). */
@@ -159,6 +183,14 @@ data class ShiftEntity(
     val createdAt: Long = System.currentTimeMillis(),
     /** Travel reimbursement actually applied to this shift, agorot (0 = none). Added in v4. */
     @ColumnInfo(defaultValue = "0") val travelAgorot: Long = 0L,
+    /**
+     * The rate this shift was paid at — agorot per hour, or per day for a daily job — so a later
+     * change of the job's rate does not rewrite it. Null for a shift whose job no longer existed
+     * when rates started being stored (it falls back to the job's current rate). Added in v5.
+     */
+    val rateAgorotAtShift: Long? = null,
+    /** The Shabbat multiplier this shift was paid with; null like [rateAgorotAtShift]. Added in v5. */
+    val multiplierAtShift: Double? = null,
 )
 
 /** The shift's income: wage + travel reimbursement (kept outside the entity so Room sees only columns). */

@@ -15,13 +15,17 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -29,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tamir.drift.R
 import com.tamir.drift.ui.LocalAppGraph
+import com.tamir.drift.ui.components.Chip
 import com.tamir.drift.ui.components.ChoiceRow
 import com.tamir.drift.ui.components.DriftDialog
 import com.tamir.drift.ui.components.DriftIcons
@@ -53,9 +58,18 @@ fun AllTransactionsScreen(
     initialMonth: String?,
     onBack: () -> Unit,
     onOpenTransaction: (Long) -> Unit,
+    /** Open with the search field focused and the keyboard up (the home search icon). */
+    focusSearch: Boolean = false,
+    /** Open showing only what could not be parsed (the home attention row). */
+    unparsedOnly: Boolean = false,
 ) {
     val graph = LocalAppGraph.current
-    val vm = driftViewModel(key = "tx/${initialCategory ?: ""}/${initialMonth ?: ""}") { AllTransactionsViewModel(graph, initialCategory, initialMonth) }
+    val vm = driftViewModel(key = "tx/${initialCategory ?: ""}/${initialMonth ?: ""}/$unparsedOnly") {
+        AllTransactionsViewModel(graph, initialCategory, initialMonth, unparsedOnly)
+    }
+    val searchFocus = remember { FocusRequester() }
+    // Focus the search field once — not again each time the user comes back from an expense.
+    var searchFocused by rememberSaveable { mutableStateOf(false) }
     val state by vm.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var exportDialog by remember { mutableStateOf(false) }
@@ -78,7 +92,22 @@ fun AllTransactionsScreen(
             }
         }
         item {
-            DriftTextField(state.filter.query, { vm.setQuery(it) }, stringResource(R.string.tx_search_hint))
+            DriftTextField(state.filter.query, { vm.setQuery(it) }, stringResource(R.string.tx_search_hint), modifier = Modifier.focusRequester(searchFocus))
+            if (focusSearch && !searchFocused) {
+                // Inside the item, so the field is already attached when focus is requested.
+                LaunchedEffect(Unit) {
+                    runCatching { searchFocus.requestFocus() }
+                    searchFocused = true
+                }
+            }
+        }
+        if (state.filter.unparsedOnly) {
+            item {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Chip(stringResource(R.string.tx_unparsed_only), selected = true, onClick = { vm.setUnparsedOnly(false) })
+                    Text(stringResource(R.string.tx_unparsed_only_hint), style = DriftType.Label11, color = DriftColors.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
         }
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -119,7 +148,7 @@ fun AllTransactionsScreen(
             item(key = "d${group.date}") {
                 Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp, start = 2.dp, end = 2.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text(Fmt.relativeDay(context, group.items.first().timestamp), style = DriftType.SectionTitle, color = DriftColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(stringResource(R.string.amount_with_shekel, Fmt.moneyAgorot(group.total)), style = DriftType.Label12, color = DriftColors.TextSecondary)
+                    Text(stringResource(R.string.amount_with_shekel, Fmt.signedMoneyAgorot(group.total)), style = DriftType.Label12, color = DriftColors.TextSecondary)
                 }
             }
             items(group.items, key = { it.id }) { tx -> TxRow(tx, state.categories, onClick = { onOpenTransaction(tx.id) }, showDate = false) }

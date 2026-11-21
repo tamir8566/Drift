@@ -5,6 +5,15 @@ package com.tamir.drift.domain.work
  * a shift's day is an epoch day (LocalDate.toEpochDay()) so it does not depend on a time zone.
  */
 
+/**
+ * The legal minimum hourly wage in Israel, in agorot. The one place this number lives — update it
+ * (and the date) when the wage changes; the job dialog warns below it.
+ */
+const val MIN_HOURLY_WAGE_AGOROT = 35_40L // from 1.4.2026
+
+/** The month [MIN_HOURLY_WAGE_AGOROT] is valid from (shown next to the warning). */
+val MIN_HOURLY_WAGE_SINCE: java.time.YearMonth = java.time.YearMonth.of(2026, 4)
+
 /** How a job pays: per worked hour (shifts have hours × rate) or a fixed amount per worked day. */
 enum class PayType {
     HOURLY,
@@ -27,7 +36,11 @@ data class JobSummary(
     val dailyRateAgorot: Long = 0L,
     /** Travel reimbursement ("החזר נסיעות") per shift, agorot; 0 = the job pays none. */
     val travelPerShiftAgorot: Long = 0L,
+    /** The user marked this job as the main one ("עבודה ראשית"); at most one job has it. */
+    val isMain: Boolean = false,
 ) {
+    /** True for an hourly job whose rate is under the legal minimum ([MIN_HOURLY_WAGE_AGOROT]). */
+    val isBelowMinimumWage: Boolean get() = !isDaily && hourlyRateAgorot in 1 until MIN_HOURLY_WAGE_AGOROT
     val isDaily: Boolean get() = payType == PayType.DAILY
 
     /** The rate that converts money into work units for this job (per hour or per day). */

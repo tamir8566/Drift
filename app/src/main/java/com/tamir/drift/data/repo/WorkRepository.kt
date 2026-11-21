@@ -9,6 +9,7 @@ import com.tamir.drift.data.db.ShiftEntity
 import com.tamir.drift.data.db.pay
 import com.tamir.drift.domain.work.JobSummary
 import com.tamir.drift.domain.work.PayType
+import com.tamir.drift.domain.work.RateSnapshot
 import com.tamir.drift.domain.work.ShiftCalculator
 import com.tamir.drift.domain.work.ShiftSummary
 import kotlinx.coroutines.flow.Flow
@@ -71,11 +72,20 @@ class WorkRepository(private val context: Context, private val db: DriftDatabase
 
     suspend fun setJobActive(id: Long, active: Boolean) = db.jobs().setActive(id, active)
 
+    /** "עבודה ראשית": marks this job and clears the mark on every other one (exactly one main). */
+    suspend fun setMainJob(id: Long) = db.jobs().setMain(id)
+
+    /** Removes the main mark when [id] carries it; the automatic choice (JobPicker) applies again. */
+    suspend fun clearMainJob(id: Long) {
+        if (db.jobs().getById(id)?.isMain == true) db.jobs().clearMain()
+    }
+
     /**
      * Saves a shift. The amount (wage) is computed from the job unless [manualAmountAgorot] is given
      * (PRD: editable computed amount → manualAmount = true). [travelAgorot] is the travel
      * reimbursement applied to this shift (0 = none); it is stored apart from the wage and is not
-     * affected by the Shabbat multiplier or by a manual wage.
+     * affected by the Shabbat multiplier or by a manual wage. The job's rate and multiplier used
+     * now are stored on the shift, so a later change of the job does not rewrite its pay.
      */
     suspend fun addShift(
         jobId: Long,
@@ -89,10 +99,9 @@ class WorkRepository(private val context: Context, private val db: DriftDatabase
         travelAgorot: Long = 0L,
     ): Long {
         val job = db.jobs().getById(jobId)
-        val amount = ShiftCalculator.resolve(
-            job?.pay ?: PayType.HOURLY, hours, job?.hourlyRateAgorot ?: 0L, job?.dailyRateAgorot ?: 0L,
-            isShabbatRate, job?.shabbatMultiplier ?: 1.5, manualAmountAgorot,
-        )
+        val payType = job?.pay ?: PayType.HOURLY
+        val rate = job.currentRate()
+        val amount = manualAmountAgorot ?: ShiftCalculator.amount(payType, hours, rate, isShabbatRate)
         return db.shifts().insert(
             ShiftEntity(
                 jobId = jobId,
@@ -105,10 +114,17 @@ class WorkRepository(private val context: Context, private val db: DriftDatabase
                 manualAmount = manualAmountAgorot != null,
                 note = note?.takeIf { it.isNotBlank() },
                 travelAgorot = travelAgorot.coerceAtLeast(0L),
+                rateAgorotAtShift = job?.let { rate.rateAgorot },
+                multiplierAtShift = job?.let { rate.multiplier },
             ),
         )
     }
 
+    /**
+     * Updates a shift. Its pay is computed with the rate stored on the shift as long as the job
+     * and the hours are unchanged (so re-saving an old shift does not move it to the job's
+     * current rate); a new job or new hours take the job's current rate, which is then stored.
+     */
     suspend fun updateShift(
         existing: ShiftEntity,
         jobId: Long,
@@ -123,10 +139,16 @@ class WorkRepository(private val context: Context, private val db: DriftDatabase
         travelAgorot: Long = existing.travelAgorot,
     ) {
         val job = db.jobs().getById(jobId)
-        val amount = ShiftCalculator.resolve(
-            job?.pay ?: PayType.HOURLY, hours, job?.hourlyRateAgorot ?: 0L, job?.dailyRateAgorot ?: 0L,
-            isShabbatRate, job?.shabbatMultiplier ?: 1.5, manualAmountAgorot,
+        val payType = job?.pay ?: PayType.HOURLY
+        val rate = ShiftCalculator.rateForEdit(
+            current = job.currentRate(),
+            stored = existing.storedRate(),
+            sameJob = jobId == existing.jobId,
+            sameHours = ShiftCalculator.sameHours(hours, existing.hours),
         )
+        val amount = manualAmountAgorot ?: ShiftCalculator.amount(payType, hours, rate, isShabbatRate)
+        // Keep a rate on the shift only when it is a real one (the job exists, or it was stored before).
+        val keepRate = job != null || existing.rateAgorotAtShift != null
         db.shifts().update(
             existing.copy(
                 jobId = jobId,
@@ -139,6 +161,8 @@ class WorkRepository(private val context: Context, private val db: DriftDatabase
                 manualAmount = manualAmountAgorot != null,
                 note = note?.takeIf { it.isNotBlank() },
                 travelAgorot = travelAgorot.coerceAtLeast(0L),
+                rateAgorotAtShift = if (keepRate) rate.rateAgorot else null,
+                multiplierAtShift = if (keepRate) rate.multiplier else null,
             ),
         )
     }
@@ -161,7 +185,18 @@ class WorkRepository(private val context: Context, private val db: DriftDatabase
 }
 
 fun JobEntity.toSummary(): JobSummary =
-    JobSummary(id, name, hourlyRateAgorot, shabbatMultiplier, isActive, pay, dailyRateAgorot, travelPerShiftAgorot)
+    JobSummary(id, name, hourlyRateAgorot, shabbatMultiplier, isActive, pay, dailyRateAgorot, travelPerShiftAgorot, isMain)
+
+/** The job's rate right now: per day for a daily job, per hour otherwise. A missing job pays nothing. */
+fun JobEntity?.currentRate(): RateSnapshot {
+    val job = this ?: return RateSnapshot(0L, 1.5)
+    return if (job.pay == PayType.DAILY) RateSnapshot(job.dailyRateAgorot, job.shabbatMultiplier)
+    else RateSnapshot(job.hourlyRateAgorot, job.shabbatMultiplier)
+}
+
+/** The rate stored on the shift when it was saved; null for a shift without one. */
+fun ShiftEntity.storedRate(): RateSnapshot? =
+    rateAgorotAtShift?.let { RateSnapshot(it, multiplierAtShift ?: 1.5) }
 
 fun List<JobEntity>.toJobSummaries(): List<JobSummary> = map { it.toSummary() }
 

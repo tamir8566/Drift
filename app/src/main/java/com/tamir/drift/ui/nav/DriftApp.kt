@@ -1,5 +1,6 @@
 package com.tamir.drift.ui.nav
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -20,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,6 +43,8 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.tamir.drift.R
+import com.tamir.drift.notify.DeepLink
+import com.tamir.drift.ui.LocalAppGraph
 import com.tamir.drift.ui.components.BottomTab
 import com.tamir.drift.ui.components.DriftBackdrop
 import com.tamir.drift.ui.components.DriftBottomBar
@@ -57,9 +61,13 @@ import com.tamir.drift.ui.screens.settings.SettingsScreen
 import com.tamir.drift.ui.screens.transactions.AllTransactionsScreen
 import com.tamir.drift.ui.screens.where.WhereScreen
 import com.tamir.drift.ui.screens.work.AddShiftScreen
+import com.tamir.drift.ui.screens.work.AllShiftsScreen
 import com.tamir.drift.ui.screens.work.WorkScreen
 import com.tamir.drift.ui.theme.DriftColors
 import com.tamir.drift.ui.theme.DriftType
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import java.time.YearMonth
 
 private val topLevel = mapOf(
     Routes.HOME to BottomTab.HOME,
@@ -68,14 +76,32 @@ private val topLevel = mapOf(
     Routes.GOAL to BottomTab.GOAL,
 )
 
+/**
+ * @param deepLink the screen a tapped notification asked for ([DeepLink]), or null.
+ * @param onDeepLinkConsumed called once the navigation happened, so it does not repeat.
+ */
 @Composable
-fun DriftApp() {
+fun DriftApp(deepLink: String? = null, onDeepLinkConsumed: () -> Unit = {}) {
     val nav = rememberNavController()
     val backStack by nav.currentBackStackEntryAsState()
     val route = backStack?.destination?.route
     val baseRoute = route?.substringBefore('?')
     val activeTab = topLevel[baseRoute]
     var showAddMenu by remember { mutableStateOf(false) }
+
+    // Notifications: budget alerts → budget, weekly work summary → goal, weekly spend summary → where.
+    LaunchedEffect(deepLink) {
+        val target = deepLink ?: return@LaunchedEffect
+        showAddMenu = false
+        when (target) {
+            DeepLink.BUDGET -> nav.navigate(Routes.BUDGET) { launchSingleTop = true }
+            DeepLink.GOAL -> nav.navigateTopLevel(BottomTab.GOAL)
+            DeepLink.WHERE -> nav.navigateTopLevel(BottomTab.WHERE)
+            DeepLink.WORK -> nav.navigateTopLevel(BottomTab.WORK)
+            DeepLink.SETTINGS -> nav.navigate(Routes.SETTINGS) { launchSingleTop = true }
+        }
+        onDeepLinkConsumed()
+    }
 
     DriftBackdrop {
         Column(Modifier.fillMaxSize()) {
@@ -98,15 +124,46 @@ fun DriftApp() {
                 onShift = { showAddMenu = false; nav.navigate(Routes.shift()) },
             )
         }
+        MessageHost(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(start = 22.dp, end = 22.dp, bottom = 96.dp))
     }
 }
 
 /**
+ * The app-wide inline message ("עודכנו 3 הוצאות של …"): a quiet glass pill above the bottom bar
+ * that shows the latest message from the app graph for a few seconds.
+ */
+@Composable
+private fun MessageHost(modifier: Modifier = Modifier) {
+    val graph = LocalAppGraph.current
+    var message by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(graph) {
+        graph.messages.collectLatest { text ->
+            message = text
+            delay(MESSAGE_MILLIS)
+            message = null
+        }
+    }
+    val text = message ?: return
+    GlassCard(modifier.fillMaxWidth().background(DriftColors.Background, RoundedCornerShape(16.dp)), radius = 16.dp, borderColor = DriftColors.PlusBorder) {
+        Text(
+            text, style = DriftType.Label13, color = DriftColors.Text, maxLines = 2, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+        )
+    }
+}
+
+private const val MESSAGE_MILLIS = 3_500L
+
+/**
  * PRD: the plus opens a small menu — "הוצאה" / "משמרת". A glass sheet anchored above the
- * bottom bar over a light scrim; tapping outside closes it.
+ * bottom bar over a light scrim; tapping outside — or the back button — closes it.
  */
 @Composable
 private fun AddMenu(onDismiss: () -> Unit, onExpense: () -> Unit, onShift: () -> Unit) {
+    // The system back button closes the menu instead of leaving the screen under it. Registered
+    // here — composed after the navigation host, whenever the menu opens — so it is the newest
+    // back callback and wins over the host's own.
+    BackHandler(onBack = onDismiss)
     Box(
         Modifier
             .fillMaxSize()
@@ -199,11 +256,15 @@ private fun DriftNavHost(nav: NavHostController) {
     ) {
         composable(Routes.HOME) {
             HomeScreen(
-                onOpenCategory = { nav.navigate(Routes.where(it)) },
+                // One tap on a category card → that category's expenses of this month.
+                onOpenCategory = { nav.navigate(Routes.transactions(category = it, month = YearMonth.now().toString())) },
                 onOpenTransaction = { nav.navigate(Routes.detail(it)) },
                 onOpenAll = { nav.navigate(Routes.transactions()) },
+                // "לפי קטגוריה → הכול" is the breakdown itself: the "לאן הכסף הולך" tab.
+                onOpenWhere = { nav.navigateTopLevel(BottomTab.WHERE) },
                 onOpenSettings = { nav.navigate(Routes.SETTINGS) },
-                onOpenSearch = { nav.navigate(Routes.transactions()) },
+                onOpenSearch = { nav.navigate(Routes.transactions(focusSearch = true)) },
+                onOpenUnparsed = { nav.navigate(Routes.transactions(unparsedOnly = true)) },
                 onOpenBudget = { nav.navigate(Routes.BUDGET) },
                 onOpenGoal = { nav.navigateTopLevel(BottomTab.GOAL) },
             )
@@ -223,7 +284,11 @@ private fun DriftNavHost(nav: NavHostController) {
             WorkScreen(
                 onAddShift = { nav.navigate(Routes.shift()) },
                 onEditShift = { nav.navigate(Routes.shift(it)) },
+                onOpenAllShifts = { nav.navigate(Routes.SHIFTS) },
             )
+        }
+        composable(Routes.SHIFTS) {
+            AllShiftsScreen(onBack = { nav.popBackStack() }, onEditShift = { nav.navigate(Routes.shift(it)) })
         }
         composable(Routes.GOAL) { GoalScreen() }
         composable(Routes.ADD) { ManualAddScreen(onDone = { nav.popBackStack() }) }
@@ -241,15 +306,20 @@ private fun DriftNavHost(nav: NavHostController) {
             TransactionDetailScreen(id = entry.arguments?.getLong(Routes.ARG_ID) ?: -1L, onBack = { nav.popBackStack() })
         }
         composable(
-            "${Routes.TRANSACTIONS}?${Routes.ARG_CATEGORY}={${Routes.ARG_CATEGORY}}&${Routes.ARG_MONTH}={${Routes.ARG_MONTH}}",
+            "${Routes.TRANSACTIONS}?${Routes.ARG_CATEGORY}={${Routes.ARG_CATEGORY}}&${Routes.ARG_MONTH}={${Routes.ARG_MONTH}}" +
+                "&${Routes.ARG_SEARCH}={${Routes.ARG_SEARCH}}&${Routes.ARG_UNPARSED}={${Routes.ARG_UNPARSED}}",
             arguments = listOf(
                 navArgument(Routes.ARG_CATEGORY) { type = NavType.StringType; nullable = true; defaultValue = null },
                 navArgument(Routes.ARG_MONTH) { type = NavType.StringType; nullable = true; defaultValue = null },
+                navArgument(Routes.ARG_SEARCH) { type = NavType.BoolType; defaultValue = false },
+                navArgument(Routes.ARG_UNPARSED) { type = NavType.BoolType; defaultValue = false },
             ),
         ) { entry ->
             AllTransactionsScreen(
                 initialCategory = entry.arguments?.getString(Routes.ARG_CATEGORY),
                 initialMonth = entry.arguments?.getString(Routes.ARG_MONTH),
+                focusSearch = entry.arguments?.getBoolean(Routes.ARG_SEARCH) ?: false,
+                unparsedOnly = entry.arguments?.getBoolean(Routes.ARG_UNPARSED) ?: false,
                 onBack = { nav.popBackStack() },
                 onOpenTransaction = { nav.navigate(Routes.detail(it)) },
             )
@@ -264,6 +334,8 @@ private fun DriftNavHost(nav: NavHostController) {
             )
         }
         composable(Routes.CALIBRATION) { CalibrationScreen(onBack = { nav.popBackStack() }) }
-        composable(Routes.DEBUG) { DebugLogScreen(onBack = { nav.popBackStack() }) }
+        composable(Routes.DEBUG) {
+            DebugLogScreen(onBack = { nav.popBackStack() }, onOpenTransaction = { nav.navigate(Routes.detail(it)) })
+        }
     }
 }

@@ -38,6 +38,13 @@ data class UpdateManifest(
 }
 
 /**
+ * How far a download got. [percent] is the whole percent 0..100 — the one value both the bar and
+ * the "מוריד… N%" text use — or null when the server did not send the file length (then only
+ * [bytes] is known and the UI shows an indeterminate state).
+ */
+data class DownloadProgress(val percent: Int?, val bytes: Long)
+
+/**
  * PRD self-update: fetch manifest.json from Supabase Storage (on start at most once a day, or
  * manually from settings); when versionCode is newer → download the APK to cache → hand it to
  * the package installer through a FileProvider URI.
@@ -70,8 +77,14 @@ class UpdateChecker(private val context: Context, private val settings: Settings
         }
     }
 
-    /** Downloads the APK into the cache dir; returns the file. */
-    suspend fun download(manifest: UpdateManifest, onProgress: (Float) -> Unit = {}): File = withContext(Dispatchers.IO) {
+    /**
+     * Downloads the APK into the cache dir; returns the file.
+     *
+     * [onProgress] is called (on the IO thread) once at the start, then only when the whole
+     * percent changes — or, when the length is unknown, about every 256 KB — and once more at the
+     * end with 100, so a finished download always reads 100%.
+     */
+    suspend fun download(manifest: UpdateManifest, onProgress: (DownloadProgress) -> Unit = {}): File = withContext(Dispatchers.IO) {
         val dir = File(context.cacheDir, "updates").apply { mkdirs() }
         dir.listFiles()?.forEach { it.delete() }
         val file = File(dir, "drift-${manifest.versionCode}.apk")
@@ -81,18 +94,31 @@ class UpdateChecker(private val context: Context, private val settings: Settings
         try {
             if (conn.responseCode !in 200..299) error("HTTP ${conn.responseCode}")
             val total = conn.contentLengthLong
+            var done = 0L
+            var lastPercent = -1
+            var lastReportedBytes = 0L
+            onProgress(DownloadProgress(if (total > 0) 0 else null, 0L))
             conn.inputStream.use { input ->
                 file.outputStream().use { out ->
                     val buf = ByteArray(64 * 1024)
                     var read: Int
-                    var done = 0L
                     while (input.read(buf).also { read = it } >= 0) {
                         out.write(buf, 0, read)
                         done += read
-                        if (total > 0) onProgress(done.toFloat() / total)
+                        if (total > 0) {
+                            val percent = (done * 100 / total).toInt().coerceIn(0, 100)
+                            if (percent != lastPercent) {
+                                lastPercent = percent
+                                onProgress(DownloadProgress(percent, done))
+                            }
+                        } else if (done - lastReportedBytes >= UNKNOWN_LENGTH_STEP_BYTES) {
+                            lastReportedBytes = done
+                            onProgress(DownloadProgress(null, done))
+                        }
                     }
                 }
             }
+            onProgress(DownloadProgress(100, done))
         } finally {
             conn.disconnect()
         }
@@ -131,5 +157,6 @@ class UpdateChecker(private val context: Context, private val settings: Settings
     companion object {
         private const val TAG = "Drift.Update"
         const val DAY_MILLIS = 24L * 60 * 60 * 1000
+        private const val UNKNOWN_LENGTH_STEP_BYTES = 256L * 1024
     }
 }

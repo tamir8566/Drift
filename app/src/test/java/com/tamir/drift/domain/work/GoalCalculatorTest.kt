@@ -26,8 +26,72 @@ class GoalCalculatorTest {
     private fun shift(date: LocalDate, hours: Double, shabbat: Boolean = false, jobId: Long = 1L, travel: Long = 0L): ShiftSummary =
         ShiftSummary(nextId++, jobId, date.toEpochDay(), hours, ShiftCalculator.amount(hours, rate, shabbat, 1.5), shabbat, travel)
 
-    private fun tx(amount: Double, ts: Long, mine: Double = amount) =
-        TxnSummary(nextId++, amount, mine, "x", CategoryKeys.GROCERIES, ts, TransactionSource.GPAY, isShared = mine != amount)
+    private fun tx(amount: Double, ts: Long, mine: Double = amount, kind: com.tamir.drift.domain.model.TxnKind = com.tamir.drift.domain.model.TxnKind.EXPENSE) =
+        TxnSummary(nextId++, amount, mine, "x", CategoryKeys.GROCERIES, ts, TransactionSource.GPAY, isShared = mine != amount, kind = kind)
+
+    @Test
+    fun `refunds raise the saving, transfers do not touch it`() {
+        val shifts = listOf(shift(day(2026, 11, 2), 8.0))
+        val txs = listOf(
+            tx(200.0, at(2026, 11, 5)),
+            tx(60.0, at(2026, 11, 6), kind = com.tamir.drift.domain.model.TxnKind.REFUND),
+            tx(90.0, at(2026, 11, 6), mine = 30.0, kind = com.tamir.drift.domain.model.TxnKind.REFUND),
+            tx(5000.0, at(2026, 11, 6), kind = com.tamir.drift.domain.model.TxnKind.TRANSFER),
+        )
+        val s = GoalCalculator.monthStatus(shifts, txs, nov, day(2026, 11, 8), zone, 2_000_00L, rate)
+        assertEquals(110_00L, s.spentAgorot) // 200 − 60 − 30
+        assertEquals(304_00L - 110_00L, s.savedAgorot)
+        assertEquals(110_00L, GoalCalculator.history(shifts, txs, nov, 2_000_00L, zone, months = 1).single().let { 304_00L - it.savedAgorot })
+    }
+
+    @Test
+    fun `month spend counts through the end of today, like the budget`() {
+        val txs = listOf(tx(40.0, at(2026, 11, 8, 22)), tx(500.0, at(2026, 11, 9, 9)))
+        val s = GoalCalculator.monthStatus(emptyList(), txs, nov, day(2026, 11, 8), zone, 2_000_00L, rate)
+        assertEquals(40_00L, s.spentAgorot)
+        assertEquals(540_00L, GoalCalculator.spentIn(txs, nov, zone))
+    }
+
+    @Test
+    fun `month bar keeps the real percent above the goal and below zero`() {
+        val over = MonthGoalStatus(nov, 3_000_00L, 400_00L, 2_000_00L, 8, 30, rate)
+        assertEquals(1.0, over.bar.fraction.toDouble(), 0.0001)
+        assertEquals(130, over.bar.percent)
+        val negative = MonthGoalStatus(nov, 100_00L, 600_00L, 2_000_00L, 8, 30, rate)
+        assertEquals(0.0, negative.bar.fraction.toDouble(), 0.0001)
+        assertEquals(-25, negative.bar.percent)
+        assertTrue(negative.bar.isNegative)
+    }
+
+    @Test
+    fun `week bar, goal and message all use the goal after the carry-over`() {
+        // Deficit carried in: goal 1,200, carry −220 → this week needs 1,420.
+        val behind = WeekStatus(WeekRange(day(2026, 11, 8), day(2026, 11, 14)), incomeAgorot = 1_200_00L, goalAgorot = 1_200_00L, carryInAgorot = -220_00L)
+        assertEquals(1_420_00L, behind.adjustedGoalAgorot)
+        assertEquals(85, behind.bar.percent)                       // 1,200 of 1,420 — not "100%"
+        assertEquals(-220_00L, behind.balanceAgorot)               // the message: 220 still missing
+        assertEquals(behind.incomeAgorot - behind.adjustedGoalAgorot, behind.balanceAgorot)
+        assertTrue(behind.hasCarry)
+
+        // Surplus carried in: goal 1,200, carry +180 → this week needs 1,020.
+        val ahead = WeekStatus(WeekRange(day(2026, 11, 8), day(2026, 11, 14)), 1_020_00L, 1_200_00L, 180_00L)
+        assertEquals(1_020_00L, ahead.adjustedGoalAgorot)
+        assertEquals(100, ahead.bar.percent)
+        assertEquals(0L, ahead.balanceAgorot)
+
+        // A surplus bigger than the whole goal: nothing is needed, the bar is full.
+        val covered = WeekStatus(WeekRange(day(2026, 11, 8), day(2026, 11, 14)), 0L, 1_200_00L, 1_500_00L)
+        assertEquals(0L, covered.adjustedGoalAgorot)
+        assertTrue(covered.isCoveredByCarry)
+        assertEquals(1.0, covered.bar.fraction.toDouble(), 0.0001)
+        assertEquals(300_00L, covered.balanceAgorot)
+
+        // No carry: the adjusted goal is the goal.
+        val plain = WeekStatus(WeekRange(day(2026, 11, 8), day(2026, 11, 14)), 300_00L, 1_200_00L, 0L)
+        assertFalse(plain.hasCarry)
+        assertEquals(25, plain.bar.percent)
+        assertEquals(0.25, plain.progress, 0.001)
+    }
 
     // ---- month ----
 

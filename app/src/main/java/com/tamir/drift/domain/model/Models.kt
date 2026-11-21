@@ -29,6 +29,21 @@ object CategoryKeys {
     )
 }
 
+/**
+ * What a stored transaction means for the calculations: an expense counts, a refund is
+ * subtracted, a transfer ("לא נספר") is ignored everywhere.
+ */
+enum class TxnKind {
+    EXPENSE,
+    REFUND,
+    TRANSFER;
+
+    companion object {
+        /** Lenient parse of the stored name; unknown / null → [EXPENSE]. */
+        fun from(name: String?): TxnKind = entries.firstOrNull { it.name == name } ?: EXPENSE
+    }
+}
+
 /** How confident the parser is about a captured text. */
 enum class ParseStatus {
     /** Amount and merchant were extracted. */
@@ -50,7 +65,12 @@ data class ParsedTransaction(
     val parserName: String,
     /** Day/month mentioned in the text ("היום 05/11", "אתמול", "05/11"), when present. */
     val date: ParsedDate? = null,
+    /** [TxnKind.REFUND] when the text speaks of a credit / cancelled transaction, else an expense. */
+    val kind: TxnKind = TxnKind.EXPENSE,
 ) {
+    /** True when [amount] is in a foreign currency ([currency] is "USD" / "EUR" / "GBP"), not in shekels. */
+    val isForeign: Boolean get() = currency != null && currency != "ILS"
+
     companion object {
         fun unparsed(parserName: String) =
             ParsedTransaction(null, null, null, null, ParseStatus.UNPARSED, parserName)
@@ -95,7 +115,21 @@ data class TxnSummary(
     val timestamp: Long,
     val source: TransactionSource,
     val isShared: Boolean = false,
-)
+    val kind: TxnKind = TxnKind.EXPENSE,
+) {
+    val isExpense: Boolean get() = kind == TxnKind.EXPENSE
+    val isRefund: Boolean get() = kind == TxnKind.REFUND
+
+    /**
+     * What this transaction adds to "spent": my share for an expense, minus my share for a
+     * refund, nothing for a transfer. Every calculator sums this — never [myShare] directly.
+     */
+    val net: Double get() = when (kind) {
+        TxnKind.EXPENSE -> myShare
+        TxnKind.REFUND -> -myShare
+        TxnKind.TRANSFER -> 0.0
+    }
+}
 
 /** A merchant keyword -> category rule. */
 data class MerchantRuleModel(

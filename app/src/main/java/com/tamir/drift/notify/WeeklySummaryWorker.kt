@@ -43,8 +43,10 @@ class WeeklySummaryWorker(appContext: Context, params: WorkerParameters) : Corou
     private suspend fun notify(graph: AppGraph, settings: Settings) {
         val zone = ZoneId.systemDefault()
         val now = ZonedDateTime.now(zone)
-        val weekEnd = now.toLocalDate().plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
-        val weekStart = weekEnd - TimeUnit.DAYS.toMillis(7)
+        // The seven whole days that ended yesterday: on the default Sunday morning this is exactly
+        // the Sunday–Saturday week that just closed (the same week the screens call "השבוע").
+        val weekEnd = now.toLocalDate().atStartOfDay(zone).toInstant().toEpochMilli()
+        val weekStart = now.toLocalDate().minusDays(7).atStartOfDay(zone).toInstant().toEpochMilli()
         val all = graph.db.transactions().getAll()
         val month = YearMonth.from(now)
         // Tracking start: the week's spend and the month figures only count transactions from it on.

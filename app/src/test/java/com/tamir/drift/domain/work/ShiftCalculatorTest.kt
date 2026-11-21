@@ -9,6 +9,37 @@ class ShiftCalculatorTest {
     private val rate = 38_00L // 38 ₪ per hour
 
     @Test
+    fun `an edited shift keeps its stored rate unless hours or job change`() {
+        val stored = RateSnapshot(38_00L, 1.5)
+        val current = RateSnapshot(42_00L, 2.0)
+        assertEquals(stored, ShiftCalculator.rateForEdit(current, stored, sameJob = true, sameHours = true))
+        assertEquals(current, ShiftCalculator.rateForEdit(current, stored, sameJob = true, sameHours = false))
+        assertEquals(current, ShiftCalculator.rateForEdit(current, stored, sameJob = false, sameHours = true))
+        // A shift from before rates were stored falls back to the job's current rate.
+        assertEquals(current, ShiftCalculator.rateForEdit(current, null, sameJob = true, sameHours = true))
+    }
+
+    @Test
+    fun `amount from a rate snapshot for both pay types`() {
+        val snap = RateSnapshot(38_00L, 1.5)
+        assertEquals(304_00L, ShiftCalculator.amount(PayType.HOURLY, 8.0, snap, false))
+        assertEquals(456_00L, ShiftCalculator.amount(PayType.HOURLY, 8.0, snap, true))
+        val daily = RateSnapshot(400_00L, 1.5)
+        assertEquals(400_00L, ShiftCalculator.amount(PayType.DAILY, 0.0, daily, false))
+        assertEquals(600_00L, ShiftCalculator.amount(PayType.DAILY, 0.0, daily, true))
+        assertEquals(true, ShiftCalculator.sameHours(7.5, 7.5000000001))
+        assertEquals(false, ShiftCalculator.sameHours(7.5, 7.75))
+    }
+
+    @Test
+    fun `minimum wage constant and check`() {
+        assertEquals(35_40L, MIN_HOURLY_WAGE_AGOROT)
+        assertEquals(true, JobSummary(1, "a", 35_00L).isBelowMinimumWage)
+        assertEquals(false, JobSummary(1, "a", 35_40L).isBelowMinimumWage)
+        assertEquals(false, JobSummary(1, "a", 0L, payType = PayType.DAILY, dailyRateAgorot = 200_00L).isBelowMinimumWage)
+    }
+
+    @Test
     fun `regular shift is hours times rate`() {
         assertEquals(304_00L, ShiftCalculator.amount(8.0, rate, false, 1.5))
         assertEquals(247_00L, ShiftCalculator.amount(6.5, rate, false, 1.5))

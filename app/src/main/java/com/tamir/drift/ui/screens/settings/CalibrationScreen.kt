@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tamir.drift.R
 import com.tamir.drift.data.db.ParsePatternEntity
+import com.tamir.drift.domain.money.Currencies
 import com.tamir.drift.domain.model.ParseStatus
 import com.tamir.drift.domain.model.TransactionSource
 import com.tamir.drift.domain.model.UserPattern
@@ -122,7 +123,7 @@ fun CalibrationScreen(onBack: () -> Unit) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(stringResource(R.string.calib_parse_result), style = DriftType.Label12, color = DriftColors.TextSecondary)
                 val none = stringResource(R.string.calib_parsed_none)
-                Text(stringResource(R.string.calib_parsed_amount, parsed?.amount?.let { Fmt.money(it) } ?: none), style = DriftType.Body, color = if (parsed?.amount != null) DriftColors.Lime else DriftColors.Orange)
+                Text(stringResource(R.string.calib_parsed_amount, parsed?.let { p -> p.amount?.let { a -> if (p.isForeign) Fmt.foreign(Currencies.toMinor(a), p.currency) else Fmt.money(a) } } ?: none), style = DriftType.Body, color = if (parsed?.amount != null) DriftColors.Lime else DriftColors.Orange)
                 Text(stringResource(R.string.calib_parsed_merchant, parsed?.merchant ?: none), style = DriftType.Body, color = if (parsed?.merchant != null) DriftColors.Text else DriftColors.Orange, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 if (parsed != null) Text(stringResource(R.string.calib_parser, parsed.parserName), style = DriftType.Label11, color = DriftColors.TextDim)
             }

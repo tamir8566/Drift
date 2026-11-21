@@ -44,13 +44,13 @@ class MaxSmsParser : SourceParser {
         // "אצל רמי לוי", "בבית העסק רמי לוי"
         Regex("""(?:אצל|בבית העסק|בית עסק:?|בחנות)\s+(.+?)(?=$MERCHANT_END)"""),
         // "ב" prefixed directly to the word after the amount: "בסך 45.90 ש"ח בשופרסל דיל בתאריך"
-        Regex("""(?:₪|ש["״'']ח|שח|ILS|NIS)\s+ב(?!תאריך|שעה|סך|כרטיס)(\S.*?)(?=$MERCHANT_END)"""),
+        Regex("""(?:₪|ש["״'']ח|שח|ILS|NIS|$FOREIGN)\s+ב(?!תאריך|שעה|סך|כרטיס)(\S.*?)(?=$MERCHANT_END)"""),
     )
 
     private val todayDate = Regex("""היום\s*(?:ב-?\s*)?(\d{1,2})[./](\d{1,2})""")
     private val yesterdayDate = Regex("""אתמול\s*(?:ב-?\s*)?(?:(\d{1,2})[./](\d{1,2}))?""")
     private val plainDate =
-        Regex("""(?<![\d/.])(\d{1,2})[./](\d{1,2})(?:[./](\d{2,4}))?(?![\d/.])(?!\s*(?:₪|שח|ש["״'']ח|ILS|NIS))""")
+        Regex("""(?<![\d/.$FOREIGN_SIGNS])(\d{1,2})[./](\d{1,2})(?:[./](\d{2,4}))?(?![\d/.])(?!\s*(?:₪|שח|ש["״'']ח|ILS|NIS|$FOREIGN))""")
 
     override fun parse(text: String): ParsedTransaction {
         // Drop link lines first; they contain digits that must not confuse anything.
@@ -101,9 +101,15 @@ class MaxSmsParser : SourceParser {
         m.replace(Regex("""\s+(אושר|אושרה|בוצע|בוצעה)$"""), "")
 
     private companion object {
+        /** "$€£" for use inside a character class (a normal string, so "$" is not a template). */
+        const val FOREIGN_SIGNS = "\$€£"
+
+        /** Foreign currency markers (signs, codes, Hebrew names) — an amount next to one is not a date and not a merchant. */
+        const val FOREIGN = "[$FOREIGN_SIGNS]|USD|EUR|GBP|" + AmountParser.FOREIGN_AFTER_WORDS
+
         /** Where a merchant name stops. */
         const val MERCHANT_END =
             """\s+בתאריך|\s+ב-?\d{1,2}[./]\d{1,2}|\s+בשעה|\s+יתרת|\s+לפרטים|\s+אושר|\s+מסגרת|\s+כדאי|""" +
-                """\s+בכרטיס|\s+בסך|\s+ע["״']?ס|\s+(?:₪|שח|ש["״']ח|ILS|NIS)(?!\p{L})|[.,;\n]|$"""
+                """\s+בכרטיס|\s+בסך|\s+ע["״']?ס|\s+(?:₪|שח|ש["״']ח|ILS|NIS|""" + FOREIGN + """)(?!\p{L})|[.,;\n]|$"""
     }
 }

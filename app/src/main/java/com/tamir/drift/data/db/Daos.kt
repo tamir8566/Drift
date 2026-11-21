@@ -34,17 +34,15 @@ interface TransactionDao {
     )
     suspend fun findSameAmountAround(amountFull: Long, from: Long, to: Long): List<TransactionEntity>
 
-    @Query("SELECT * FROM transactions WHERE merchant = :merchant")
-    suspend fun getByMerchant(merchant: String): List<TransactionEntity>
-
     @Insert
     suspend fun insert(t: TransactionEntity): Long
 
     @Update
     suspend fun update(t: TransactionEntity)
 
-    @Query("UPDATE transactions SET categoryId = :categoryId WHERE merchant = :merchant AND merchant != ''")
-    suspend fun recategorizeMerchant(merchant: String, categoryId: String)
+    /** Sets the category of the given rows (pass at most a few hundred ids per call). */
+    @Query("UPDATE transactions SET categoryId = :categoryId WHERE id IN (:ids)")
+    suspend fun setCategory(ids: List<Long>, categoryId: String)
 
     @Delete
     suspend fun delete(t: TransactionEntity)
@@ -63,6 +61,10 @@ interface RawCaptureDao {
 
     @Query("SELECT * FROM raw_captures WHERE id = :id")
     suspend fun getById(id: Long): RawCaptureEntity?
+
+    /** Capture times of the newest [limit] rows (for the capture watchdog). */
+    @Query("SELECT capturedAt FROM raw_captures ORDER BY capturedAt DESC LIMIT :limit")
+    suspend fun latestTimes(limit: Int): List<Long>
 
     @Insert
     suspend fun insert(r: RawCaptureEntity): Long
@@ -198,6 +200,14 @@ interface JobDao {
 
     @Query("UPDATE jobs SET isActive = :active WHERE id = :id")
     suspend fun setActive(id: Long, active: Boolean)
+
+    /** Marks one job as the main one and clears the mark on every other job (exactly one main). */
+    @Query("UPDATE jobs SET isMain = CASE WHEN id = :id THEN 1 ELSE 0 END")
+    suspend fun setMain(id: Long)
+
+    /** Removes the main mark from every job; the automatic choice applies again. */
+    @Query("UPDATE jobs SET isMain = 0")
+    suspend fun clearMain()
 }
 
 @Dao

@@ -33,6 +33,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tamir.drift.R
 import com.tamir.drift.data.db.SavingsGoalEntity
 import com.tamir.drift.data.repo.Money
+import com.tamir.drift.domain.format.BarValue
+import com.tamir.drift.domain.money.AmountInput
 import com.tamir.drift.ui.LocalAppGraph
 import com.tamir.drift.ui.components.BudgetLine
 import com.tamir.drift.ui.components.CategoryBar
@@ -92,7 +94,8 @@ fun GoalScreen() {
             val onTrack = status?.onTrack ?: true
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text(stringResource(R.string.goal_saved_month), style = DriftType.Label13, color = DriftColors.TextSecondary)
+                    // A negative month is said in words — "בחוסר החודש" over the amount — not with a minus sign.
+                    Text(stringResource(if (negative) R.string.goal_short_month else R.string.goal_saved_month), style = DriftType.Label13, color = DriftColors.TextSecondary)
                     if (status != null) {
                         StatusPill(
                             stringResource(if (onTrack) R.string.goal_on_track else R.string.goal_off_track),
@@ -102,27 +105,31 @@ fun GoalScreen() {
                 }
                 Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
-                        (if (negative) "−" else "") + Fmt.moneyAgorot(abs(saved)),
+                        Fmt.moneyAgorot(abs(saved)),
                         style = DriftType.Hero, color = if (negative) DriftColors.Orange else DriftColors.Text,
                         maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.alignByBaseline(),
                     )
                     Text(stringResource(R.string.shekel), style = DriftType.HeroCurrency, color = DriftColors.TextSecondary, modifier = Modifier.alignByBaseline())
                 }
                 Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    val pct = status?.percentOfGoal ?: 0.0
+                    // One value for the line and for the text next to it. Below zero the line is
+                    // empty and the text says "בחוסר"; above the goal the line is full and the
+                    // text keeps the real percent.
+                    val bar = status?.bar ?: BarValue.EMPTY
                     BudgetLine(
-                        fraction = (pct / 100.0).toFloat(),
+                        fraction = bar.fraction,
                         color = if (onTrack) DriftColors.Lime else DriftColors.Orange,
                         modifier = Modifier.weight(1f),
                     )
                     Text(
-                        "${Fmt.percent(pct.coerceAtLeast(0.0))} · ${stringResource(R.string.out_of, Fmt.moneyAgorot(saved), Fmt.moneyAgorot(state.monthlyGoalAgorot))}",
+                        if (negative) stringResource(R.string.goal_short_of_goal, Fmt.moneyAgorot(abs(saved)), Fmt.moneyAgorot(state.monthlyGoalAgorot))
+                        else "${Fmt.percent(bar)} · ${stringResource(R.string.out_of, Fmt.moneyAgorot(saved), Fmt.moneyAgorot(state.monthlyGoalAgorot))}",
                         style = DriftType.Label12, color = DriftColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
                 }
                 if (status != null) {
                     Text(
-                        stringResource(R.string.goal_earned_spent, Fmt.moneyAgorot(status.earnedAgorot), Fmt.moneyAgorot(status.spentAgorot)),
+                        stringResource(R.string.goal_earned_spent, Fmt.moneyAgorot(status.earnedAgorot), Fmt.signedMoneyAgorot(status.spentAgorot)),
                         style = DriftType.Label11, color = DriftColors.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
                     when {
@@ -150,8 +157,12 @@ fun GoalScreen() {
                             )
                         }
                     }
+                    // The card speaks about one goal only: this week's goal after the carry-over from
+                    // the earlier weeks of the month. The "מתוך", the bar, its percent and the
+                    // surplus / deficit line below all refer to it.
                     val income = week?.incomeAgorot ?: 0L
-                    val goal = week?.goalAgorot ?: state.weeklyGoalAgorot
+                    val goal = week?.adjustedGoalAgorot ?: state.weeklyGoalAgorot
+                    val bar = week?.bar ?: BarValue.EMPTY
                     val surplus = week?.isSurplus ?: false
                     val deficit = week?.isDeficit ?: false
                     val weekColor = when {
@@ -166,13 +177,25 @@ fun GoalScreen() {
                             style = DriftType.Label13, color = DriftColors.TextSecondary, modifier = Modifier.alignByBaseline(),
                         )
                     }
-                    CategoryBar((week?.progress ?: 0.0).toFloat(), if (deficit) DriftColors.Orange else DriftColors.Lime)
+                    CategoryBar(bar.fraction, if (deficit) DriftColors.Orange else DriftColors.Lime)
                     if (week != null) {
-                        if (week.carryInAgorot != 0L) {
+                        Text(
+                            when {
+                                week.isCoveredByCarry -> stringResource(R.string.goal_week_covered)
+                                week.hasCarry -> stringResource(R.string.goal_week_pct_adjusted, Fmt.percent(bar))
+                                else -> stringResource(R.string.goal_week_pct_plain, Fmt.percent(bar))
+                            },
+                            style = DriftType.Label11, color = DriftColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        )
+                        if (week.hasCarry) {
+                            // How the goal above was reached: the weekly goal, plus what was missing / minus the surplus.
                             Text(
-                                if (week.carryInAgorot > 0L) stringResource(R.string.goal_week_carry_plus, Fmt.moneyAgorot(week.carryInAgorot))
-                                else stringResource(R.string.goal_week_carry_minus, Fmt.moneyAgorot(-week.carryInAgorot)),
-                                style = DriftType.Label11, color = DriftColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                if (week.carryInAgorot > 0L) {
+                                    stringResource(R.string.goal_week_carry_plus, Fmt.moneyAgorot(week.goalAgorot), Fmt.moneyAgorot(week.carryInAgorot), Fmt.moneyAgorot(week.adjustedGoalAgorot))
+                                } else {
+                                    stringResource(R.string.goal_week_carry_minus, Fmt.moneyAgorot(week.goalAgorot), Fmt.moneyAgorot(-week.carryInAgorot), Fmt.moneyAgorot(week.adjustedGoalAgorot))
+                                },
+                                style = DriftType.Label11, color = DriftColors.TextSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis,
                             )
                         }
                         val balance = week.balanceAgorot
@@ -300,7 +323,7 @@ fun GoalScreen() {
     if (editMonthly) {
         AmountDialog(
             title = stringResource(R.string.goal_target_monthly),
-            initial = Fmt.moneyAgorot(state.monthlyGoalAgorot).replace(",", ""),
+            initial = Fmt.fieldAmount(state.monthlyGoalAgorot),
             note = null,
             allowRemove = false,
             onDismiss = { editMonthly = false },
@@ -310,7 +333,7 @@ fun GoalScreen() {
     if (editWeekly) {
         AmountDialog(
             title = stringResource(R.string.goal_target_weekly),
-            initial = Fmt.moneyAgorot(state.weeklyGoalAgorot).replace(",", ""),
+            initial = Fmt.fieldAmount(state.weeklyGoalAgorot),
             note = null,
             allowRemove = false,
             onDismiss = { editWeekly = false },
@@ -329,7 +352,7 @@ fun GoalScreen() {
     }
     depositFor?.let { g ->
         var text by remember { mutableStateOf("") }
-        val value = text.replace(",", "").toDoubleOrNull()
+        val value = AmountInput.parse(text)
         DriftDialog(
             title = "${stringResource(R.string.savings_deposit)} · ${g.name}",
             onDismiss = { depositFor = null },
@@ -364,11 +387,11 @@ private fun ActionText(text: String, color: Color, onClick: () -> Unit) {
 private fun LongTermGoalDialog(title: String, goal: SavingsGoalEntity?, onDismiss: () -> Unit, onSave: (String, Double, Long) -> Unit) {
     val zone = ZoneId.systemDefault()
     var name by remember { mutableStateOf(goal?.name ?: "") }
-    var amount by remember { mutableStateOf(goal?.let { Fmt.money(Money.toShekels(it.targetAmount)).replace(",", "") } ?: "") }
+    var amount by remember { mutableStateOf(goal?.let { Fmt.fieldAmount(it.targetAmount) } ?: "") }
     var date by remember {
         mutableStateOf(goal?.let { Instant.ofEpochMilli(it.targetDate).atZone(zone).toLocalDate().toFieldText() } ?: "")
     }
-    val amountValue = amount.replace(",", "").toDoubleOrNull()
+    val amountValue = AmountInput.parse(amount)
     val dateValue = parseDate(date)
     val valid = name.isNotBlank() && amountValue != null && amountValue > 0 && dateValue != null
     DriftDialog(
