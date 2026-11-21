@@ -136,7 +136,7 @@ class CaptureProcessor(
 
         val merchant = parsed.merchant.orEmpty()
         var categoryId = categories.classifier().classify(merchant)
-        var mineAgorot = amountAgorot
+        var mineAgorot: Long = amountAgorot
         var shared = false
         if (kind == TxnKind.REFUND) {
             // A refund follows the purchase it belongs to: its category and its "with friends" share.
