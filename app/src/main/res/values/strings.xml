@@ -320,7 +320,11 @@
     <string name="work_job_multiplier">מכפיל שבת (למשל 1.5)</string>
     <string name="work_job_travel">+ %1$s ₪ נסיעות</string>
     <string name="work_job_travel_field">החזר נסיעות למשמרת (₪)</string>
-    <string name="work_job_invalid_travel">צריך סכום של אפס או יותר</string>
+    <string name="work_job_invalid_travel">צריך סכום גדול מאפס</string>
+    <string name="work_job_has_travel">החזר נסיעות</string>
+    <string name="work_job_has_travel_on">הסכום יתווסף לבד לכל משמרת חדשה</string>
+    <string name="work_job_has_travel_off">עבודה ללא החזר נסיעות</string>
+    <string name="work_job_no_travel">ללא נסיעות</string>
     <string name="work_job_deactivate">השבתה</string>
     <string name="work_job_activate">הפעלה</string>
     <string name="work_delete_shift_confirm">למחוק את המשמרת?</string>

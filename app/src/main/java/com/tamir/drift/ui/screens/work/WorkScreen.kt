@@ -53,6 +53,7 @@ import com.tamir.drift.ui.components.ScreenHeader
 import com.tamir.drift.ui.components.SectionHeader
 import com.tamir.drift.ui.components.Stat
 import com.tamir.drift.ui.components.StatTriplet
+import com.tamir.drift.ui.components.SwitchRow
 import com.tamir.drift.ui.components.TransactionRow
 import com.tamir.drift.ui.driftViewModel
 import com.tamir.drift.ui.format.Fmt
@@ -268,6 +269,7 @@ private fun JobRow(job: JobEntity, onEdit: () -> Unit, onToggleActive: () -> Uni
                 else add(stringResource(R.string.work_job_rate, Fmt.moneyExact(job.hourlyRateAgorot)))
                 add(stringResource(R.string.work_job_shabbat, ShiftCalculator.formatHours(job.shabbatMultiplier)))
                 if (job.travelPerShiftAgorot > 0L) add(stringResource(R.string.work_job_travel, Fmt.moneyExact(job.travelPerShiftAgorot)))
+                else add(stringResource(R.string.work_job_no_travel))
                 if (!job.isActive) add(stringResource(R.string.work_job_inactive))
             }.joinToString(" · ")
             Text(meta, style = DriftType.Label11, color = DriftColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -290,16 +292,18 @@ private fun JobDialog(title: String, job: JobEntity?, onDismiss: () -> Unit, onS
     var multiplier by remember { mutableStateOf(job?.let { ShiftCalculator.formatHours(it.shabbatMultiplier) } ?: "1.5") }
     // Travel reimbursement per shift: optional — an empty field means none (0).
     var travel by remember { mutableStateOf(job?.takeIf { it.travelPerShiftAgorot > 0L }?.let { Fmt.moneyExact(it.travelPerShiftAgorot).replace(",", "") } ?: "") }
+    // Explicit choice: a job either pays travel (amount required) or is marked as paying none.
+    var hasTravel by remember { mutableStateOf(job?.let { it.travelPerShiftAgorot > 0L } ?: false) }
     val rate = when (payType) {
         PayType.HOURLY -> hourlyRate
         PayType.DAILY -> dailyRate
     }
     val rateValue = rate.replace(",", "").toDoubleOrNull()
     val multValue = multiplier.replace(",", ".").toDoubleOrNull()
-    val travelValue = if (travel.isBlank()) 0.0 else travel.replace(",", "").toDoubleOrNull()
+    val travelValue = if (!hasTravel) 0.0 else travel.replace(",", "").toDoubleOrNull()
     val rateOk = rateValue != null && rateValue > 0.0
     val multOk = multValue != null && multValue >= 1.0
-    val travelOk = travelValue != null && travelValue >= 0.0
+    val travelOk = !hasTravel || (travelValue != null && travelValue > 0.0)
     val valid = name.isNotBlank() && rateOk && multOk && travelOk
     DriftDialog(
         title = title,
@@ -334,13 +338,19 @@ private fun JobDialog(title: String, job: JobEntity?, onDismiss: () -> Unit, onS
                 isError = multiplier.isNotBlank() && !multOk,
                 supporting = if (multiplier.isNotBlank() && !multOk) stringResource(R.string.work_job_invalid_multiplier) else null,
             )
-            // Same field for hourly and daily jobs; 0 or empty = the job pays no travel.
-            DriftTextField(
-                travel, { travel = it }, stringResource(R.string.work_job_travel_field), keyboardType = KeyboardType.Decimal,
-                placeholder = "0",
-                isError = !travelOk,
-                supporting = if (!travelOk) stringResource(R.string.work_job_invalid_travel) else null,
+            // Same for hourly and daily jobs: the switch says whether the job pays travel at all;
+            // when on, the amount is saved on the job and added to every new shift by itself.
+            SwitchRow(
+                stringResource(R.string.work_job_has_travel), hasTravel, { hasTravel = it },
+                subtitle = stringResource(if (hasTravel) R.string.work_job_has_travel_on else R.string.work_job_has_travel_off),
             )
+            if (hasTravel) {
+                DriftTextField(
+                    travel, { travel = it }, stringResource(R.string.work_job_travel_field), keyboardType = KeyboardType.Decimal,
+                    isError = travel.isNotBlank() && !travelOk,
+                    supporting = if (travel.isNotBlank() && !travelOk) stringResource(R.string.work_job_invalid_travel) else null,
+                )
+            }
         }
     }
 }
