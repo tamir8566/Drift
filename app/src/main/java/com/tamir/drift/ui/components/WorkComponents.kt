@@ -108,7 +108,8 @@ fun StepperRow(
 
 /**
  * Job card for the 2×2 grid (same shape as the category card): name 12sp secondary, percent of
- * the weekly goal at the end, amount 20sp bold, meta line, bar beneath.
+ * the weekly goal at the end, amount 20sp bold, meta line, bar beneath. [extraText] adds a second
+ * small line (the job's travel reimbursement); pass "" to only reserve its height.
  */
 @Composable
 fun JobCard(
@@ -120,6 +121,7 @@ fun JobCard(
     color: Color,
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
+    extraText: String? = null,
 ) {
     GlassCard(modifier, radius = 20.dp, onClick = onClick) {
         Column(Modifier.padding(horizontal = 14.dp, vertical = 13.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -129,6 +131,9 @@ fun JobCard(
             }
             Text(amountText, style = DriftType.Value20, color = DriftColors.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(metaText, style = DriftType.Label11, color = DriftColors.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (extraText != null) {
+                Text(extraText, style = DriftType.Label11, color = DriftColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
             CategoryBar(barFraction, color)
         }
     }

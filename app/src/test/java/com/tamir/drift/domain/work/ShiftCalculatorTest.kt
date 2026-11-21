@@ -53,6 +53,49 @@ class ShiftCalculatorTest {
         assertEquals(350_00L, ShiftCalculator.resolve(PayType.HOURLY, 8.0, rate, 999_00L, false, 1.5, 350_00L))
     }
 
+    // ---- travel reimbursement ----
+
+    private val travel = 22_00L // 22 ₪ per shift
+
+    @Test
+    fun `hourly day total is wage plus travel`() {
+        // 8 h × 38 ₪ = 304 ₪, + 22 ₪ travel.
+        assertEquals(326_00L, ShiftCalculator.dayTotal(PayType.HOURLY, 8.0, rate, 0L, false, 1.5, null, travel, true))
+        // A job without travel: the total is the wage alone.
+        assertEquals(304_00L, ShiftCalculator.dayTotal(PayType.HOURLY, 8.0, rate, 0L, false, 1.5, null, 0L, true))
+    }
+
+    @Test
+    fun `daily day total is the day rate plus travel`() {
+        assertEquals(422_00L, ShiftCalculator.dayTotal(PayType.DAILY, 0.0, rate, 400_00L, false, 1.5, null, travel, true))
+    }
+
+    @Test
+    fun `shabbat multiplier is not applied to travel`() {
+        // 304 × 1.5 = 456, + 22 (not 33).
+        assertEquals(478_00L, ShiftCalculator.dayTotal(PayType.HOURLY, 8.0, rate, 0L, true, 1.5, null, travel, true))
+        // 400 × 1.5 = 600, + 22.
+        assertEquals(622_00L, ShiftCalculator.dayTotal(PayType.DAILY, 0.0, rate, 400_00L, true, 1.5, null, travel, true))
+        assertEquals(travel, ShiftCalculator.travel(travel, true))
+    }
+
+    @Test
+    fun `manual wage override leaves travel untouched`() {
+        assertEquals(372_00L, ShiftCalculator.dayTotal(PayType.HOURLY, 8.0, rate, 0L, false, 1.5, 350_00L, travel, true))
+        assertEquals(372_00L, ShiftCalculator.dayTotal(PayType.HOURLY, 8.0, rate, 0L, true, 1.5, 350_00L, travel, true))
+        // A manual wage of zero still gets the travel.
+        assertEquals(travel, ShiftCalculator.dayTotal(PayType.DAILY, 0.0, rate, 400_00L, false, 1.5, 0L, travel, true))
+    }
+
+    @Test
+    fun `travel toggle off gives the wage alone`() {
+        assertEquals(304_00L, ShiftCalculator.dayTotal(PayType.HOURLY, 8.0, rate, 0L, false, 1.5, null, travel, false))
+        assertEquals(350_00L, ShiftCalculator.dayTotal(PayType.HOURLY, 8.0, rate, 0L, false, 1.5, 350_00L, travel, false))
+        assertEquals(0L, ShiftCalculator.travel(travel, false))
+        // A negative amount never reduces the wage.
+        assertEquals(0L, ShiftCalculator.travel(-5_00L, true))
+    }
+
     @Test
     fun `short hours format keeps at most one decimal`() {
         assertEquals("23.1", ShiftCalculator.formatHoursShort(23.07))

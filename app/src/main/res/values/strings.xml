@@ -284,6 +284,7 @@
 
     <string name="work_title">עבודה</string>
     <string name="work_earned_month">הרווחת החודש</string>
+    <string name="work_travel_of_month">מתוכם נסיעות %1$s ₪</string>
     <string name="work_this_week">השבוע</string>
     <string name="work_hours_month">שעות החודש</string>
     <string name="work_hours_value">%1$s שע׳</string>
@@ -300,6 +301,7 @@
     <string name="work_recent_shifts">משמרות אחרונות</string>
     <string name="work_no_shifts">אין עדיין משמרות. מוסיפים משמרת מכפתור הפלוס.</string>
     <string name="work_shabbat_tag">שבת</string>
+    <string name="work_travel_tag">כולל נסיעות</string>
     <string name="work_manage_jobs">ניהול עבודות</string>
     <string name="work_add_job">עבודה חדשה</string>
     <string name="work_add_job_short">+ עבודה</string>
@@ -316,6 +318,9 @@
     <string name="work_job_name">שם העבודה</string>
     <string name="work_job_hourly_rate">תעריף לשעה בשקלים</string>
     <string name="work_job_multiplier">מכפיל שבת (למשל 1.5)</string>
+    <string name="work_job_travel">+ %1$s ₪ נסיעות</string>
+    <string name="work_job_travel_field">החזר נסיעות למשמרת (₪)</string>
+    <string name="work_job_invalid_travel">צריך סכום של אפס או יותר</string>
     <string name="work_job_deactivate">השבתה</string>
     <string name="work_job_activate">הפעלה</string>
     <string name="work_delete_shift_confirm">למחוק את המשמרת?</string>
@@ -338,6 +343,13 @@
     <string name="shift_amount_formula_daily_shabbat">יום עבודה × %1$s ₪ × %2$s</string>
     <string name="shift_amount_manual">סכום ידני</string>
     <string name="shift_amount_reset">חזרה לסכום המחושב</string>
+    <string name="shift_travel_switch">החזר נסיעות · %1$s ₪</string>
+    <string name="shift_travel_hint">לחיצה כאן משנה את הסכום למשמרת הזו</string>
+    <string name="shift_travel_edit_title">החזר נסיעות</string>
+    <string name="shift_travel_amount">סכום ההחזר למשמרת הזו (₪)</string>
+    <string name="shift_total_day">סך הכול ליום</string>
+    <string name="shift_breakdown">שכר %1$s ₪ + נסיעות %2$s ₪</string>
+    <string name="shift_wage">שכר</string>
     <string name="shift_note">הערה</string>
     <string name="shift_invalid_time">שעה לא תקינה (שעה:דקות)</string>
     <string name="shift_invalid_hours">צריך מספר שעות גדול מאפס</string>

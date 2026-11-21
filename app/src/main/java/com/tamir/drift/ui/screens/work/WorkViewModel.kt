@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.tamir.drift.data.db.JobEntity
 import com.tamir.drift.data.db.ShiftEntity
 import com.tamir.drift.data.db.isDaily
+import com.tamir.drift.data.db.totalAgorot
 import com.tamir.drift.data.repo.Money
 import com.tamir.drift.data.repo.toJobSummaries
 import com.tamir.drift.data.repo.toShiftSummaries
@@ -28,7 +29,9 @@ data class JobCardItem(
     val monthHours: Double,
     /** Worked days (shifts) this month — the figure shown for a daily job. */
     val monthDays: Int,
+    /** Month income of the job: wage + travel reimbursement. */
     val monthAmountAgorot: Long,
+    /** Week income of the job: wage + travel reimbursement. */
     val weekAmountAgorot: Long,
     val weeklyGoalAgorot: Long,
 ) {
@@ -43,7 +46,10 @@ data class WorkUiState(
     /** The month shown in the calendar (pageable). */
     val calendarMonth: YearMonth = YearMonth.now(),
     val today: LocalDate = LocalDate.now(),
+    /** Month income: wage + travel reimbursement. */
     val earnedMonthAgorot: Long = 0L,
+    /** The travel-reimbursement part of [earnedMonthAgorot] ("מתוכם נסיעות"). */
+    val travelMonthAgorot: Long = 0L,
     val earnedWeekAgorot: Long = 0L,
     /** Hours of the month's shifts of hourly jobs (days of daily jobs carry no hours). */
     val hoursMonth: Double = 0.0,
@@ -86,8 +92,8 @@ class WorkViewModel(private val graph: AppGraph) : ViewModel() {
                 job = job,
                 monthHours = if (job.isDaily) 0.0 else mine.sumOf { it.hours },
                 monthDays = mine.size,
-                monthAmountAgorot = mine.sumOf { it.amountAgorot },
-                weekAmountAgorot = counted.filter { it.jobId == job.id && week.contains(it.date) }.sumOf { it.amountAgorot },
+                monthAmountAgorot = mine.sumOf { it.totalAgorot },
+                weekAmountAgorot = counted.filter { it.jobId == job.id && week.contains(it.date) }.sumOf { it.totalAgorot },
                 weeklyGoalAgorot = settings.weeklyIncomeGoalAgorot,
             )
         }.sortedByDescending { it.monthAmountAgorot }
@@ -98,6 +104,7 @@ class WorkViewModel(private val graph: AppGraph) : ViewModel() {
             calendarMonth = calMonth,
             today = today,
             earnedMonthAgorot = GoalCalculator.earnedIn(summaries, month),
+            travelMonthAgorot = GoalCalculator.travelIn(summaries, month),
             earnedWeekAgorot = GoalCalculator.incomeIn(summaries, week),
             hoursMonth = GoalCalculator.hourlyHoursIn(summaries, jobs.toJobSummaries(), month),
             shiftsMonth = inMonth.size,
@@ -117,12 +124,15 @@ class WorkViewModel(private val graph: AppGraph) : ViewModel() {
         viewModelScope.launch { graph.work.togglePlanned(date) }
     }
 
-    /** [rateShekels] is per hour or per day according to [payType]. */
-    fun addJob(name: String, payType: PayType, rateShekels: Double, multiplier: Double) {
-        viewModelScope.launch { graph.work.addJob(name, payType, Money.toAgorot(rateShekels), multiplier) }
+    /** [rateShekels] is per hour or per day according to [payType]; [travelShekels] is the reimbursement per shift (0 = none). */
+    fun addJob(name: String, payType: PayType, rateShekels: Double, multiplier: Double, travelShekels: Double) {
+        viewModelScope.launch {
+            graph.work.addJob(name, payType, Money.toAgorot(rateShekels), multiplier, Money.toAgorot(travelShekels))
+        }
     }
 
-    fun updateJob(job: JobEntity, name: String, payType: PayType, rateShekels: Double, multiplier: Double) {
+    /** Changing the job's travel amount affects new shifts only; saved shifts keep their stored travel. */
+    fun updateJob(job: JobEntity, name: String, payType: PayType, rateShekels: Double, multiplier: Double, travelShekels: Double) {
         val rate = Money.toAgorot(rateShekels)
         viewModelScope.launch {
             graph.work.updateJob(
@@ -132,6 +142,7 @@ class WorkViewModel(private val graph: AppGraph) : ViewModel() {
                     hourlyRateAgorot = if (payType == PayType.HOURLY) rate else 0L,
                     dailyRateAgorot = if (payType == PayType.DAILY) rate else 0L,
                     shabbatMultiplier = multiplier,
+                    travelPerShiftAgorot = Money.toAgorot(travelShekels).coerceAtLeast(0L),
                 ),
             )
         }

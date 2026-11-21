@@ -22,7 +22,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ShiftEntity::class,
         PlannedDayEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 abstract class DriftDatabase : RoomDatabase() {
@@ -85,9 +85,20 @@ abstract class DriftDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v3 → v4: travel reimbursement — the per-shift amount on a job and the amount applied to
+         * each shift. Existing jobs and shifts get 0 (no reimbursement).
+         */
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `jobs` ADD COLUMN `travelPerShiftAgorot` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `shifts` ADD COLUMN `travelAgorot` INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         fun build(context: Context): DriftDatabase =
             Room.databaseBuilder(context.applicationContext, DriftDatabase::class.java, "drift.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 // Safety net for any other version jump (was already the policy before v2).
                 .fallbackToDestructiveMigration()
                 .build()

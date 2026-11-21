@@ -132,6 +132,8 @@ data class JobEntity(
     @ColumnInfo(defaultValue = "HOURLY") val payType: String = PayType.HOURLY.name,
     /** Agorot per worked day (0 for an hourly job). Added in v3. */
     @ColumnInfo(defaultValue = "0") val dailyRateAgorot: Long = 0L,
+    /** Travel reimbursement ("החזר נסיעות") per shift, agorot; 0 = none. Added in v4. */
+    @ColumnInfo(defaultValue = "0") val travelPerShiftAgorot: Long = 0L,
 )
 
 /** Typed view of [JobEntity.payType] (kept outside the entity so Room sees only columns). */
@@ -150,12 +152,17 @@ data class ShiftEntity(
     val endTime: Int? = null,
     val hours: Double,
     val isShabbatRate: Boolean = false,
-    /** Agorot; computed unless [manualAmount]. */
+    /** The wage, agorot; computed unless [manualAmount]. Travel is not part of it. */
     val amountAgorot: Long,
     val manualAmount: Boolean = false,
     val note: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
+    /** Travel reimbursement actually applied to this shift, agorot (0 = none). Added in v4. */
+    @ColumnInfo(defaultValue = "0") val travelAgorot: Long = 0L,
 )
+
+/** The shift's income: wage + travel reimbursement (kept outside the entity so Room sees only columns). */
+val ShiftEntity.totalAgorot: Long get() = amountAgorot + travelAgorot
 
 /** A day the user marked in advance as a working day (thin ring in the calendar). */
 @Entity(tableName = "planned_days")

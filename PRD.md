@@ -36,7 +36,7 @@
 | Budget | month, total (ברירת מחדל 5000 ₪; שינוי חל מהחודש הנוכחי ואילך) |
 | SavingsGoal | id, name, targetAmount, targetDate, saved, manual deposits |
 | Settings (DataStore) | smsSenders, notificationPackages, weeklySummaryDay/Time, updateManifestUrl, lastUpdateCheck, monthlySavingGoal, weeklyIncomeGoal, workSummaryEnabled |
-| Job / Shift / PlannedDay | ראו "תוספת 8 בנובמבר" למטה (גרסת Room 2, מיגרציה 1→2 שומרת נתונים) |
+| Job / Shift / PlannedDay | ראו "תוספת 8 בנובמבר" למטה (גרסת Room 4; המיגרציות 1→2, 2→3, 3→4 שומרות נתונים) |
 
 סכומים נשמרים באגורות כמספר שלם.
 
@@ -99,7 +99,7 @@
 
 ## טכני
 - Kotlin, Jetpack Compose, Material 3, Room, Navigation Compose, WorkManager; minSdk 26, targetSdk 35. חבילה com.tamir.drift, שם מוצג Drift.
-- מאגר github.com/tamir8566/Drift (פרטי), ענף main. כל דחיפה → GitHub Actions בונה APK חתום; versionCode = מספר הריצה.
+- מאגר github.com/tamir8566/Drift (ציבורי), ענף main. כל דחיפה → GitHub Actions בונה APK חתום; versionCode = מספר הריצה.
 - חתימה מסודות המאגר: DRIFT_KEYSTORE_B64, DRIFT_KEYSTORE_PASSWORD, DRIFT_KEY_ALIAS, DRIFT_KEY_PASSWORD. בלעדיהם — בנייה לא חתומה (לבדיקות מקומיות).
 - הפצה: APK ו־manifest.json {versionCode, versionName, apkUrl, notes} לדלי ציבורי drift-releases בסופאבייס (סודות SUPABASE_URL, SUPABASE_SERVICE_KEY; יוצרים את הדלי אם חסר) + GitHub Release.
 - עדכון עצמי: כתובת המניפסט https://uabeicwtealqawiwejul.supabase.co/storage/v1/object/public/drift-releases/manifest.json; בדיקה בפתיחה עד פעם ביום; הורדה → מתקין חבילות (REQUEST_INSTALL_PACKAGES, FileProvider). גם בדיקה ידנית בהגדרות.
@@ -129,11 +129,12 @@ https://link.max.co.il/5f093cf
 ### עבודות ומשמרות
 | ישות | שדות |
 | --- | --- |
-| Job (עבודה) | id, name, payType (לפי שעה / לפי יום), hourlyRate (אגורות), dailyRate (אגורות, לעבודה לפי יום), shabbatMultiplier (ברירת מחדל 1.5), color, isActive. מוזרע מראש: עבודה לדוגמה "העבודה שלי", 40 ₪ לשעה. בעבודה לפי יום אין שעות: סכום יום = dailyRate × (shabbat ? multiplier : 1), ניתן לדריסה ידנית; "שעות החודש" סופר רק עבודות לפי שעה; החוסר ביעד מוצג כ"עוד כ־N ימי עבודה" כשהעבודה הראשית היא לפי יום |
-| Shift (משמרת) | id, jobId, date, startTime?, endTime?, hours (עשרוני), isShabbatRate, amount (אגורות; מחושב = hours × rate × (shabbat ? multiplier : 1), ניתן לדריסה ידנית → manualAmount=true), note |
+| Job (עבודה) | id, name, payType (לפי שעה / לפי יום), hourlyRate (אגורות), dailyRate (אגורות, לעבודה לפי יום), shabbatMultiplier (ברירת מחדל 1.5), travelPerShift (החזר נסיעות למשמרת, אגורות; 0 = אין), color, isActive. מוזרע מראש: עבודה לדוגמה "העבודה שלי", 40 ₪ לשעה. בעבודה לפי יום אין שעות: סכום יום = dailyRate × (shabbat ? multiplier : 1), ניתן לדריסה ידנית; "שעות החודש" סופר רק עבודות לפי שעה; החוסר ביעד מוצג כ"עוד כ־N ימי עבודה" כשהעבודה הראשית היא לפי יום |
+| Shift (משמרת) | id, jobId, date, startTime?, endTime?, hours (עשרוני), isShabbatRate, amount (אגורות; מחושב = hours × rate × (shabbat ? multiplier : 1), ניתן לדריסה ידנית → manualAmount=true), travel (אגורות; החזר הנסיעות שהוחל בפועל על המשמרת, נשמר בנפרד מהשכר; 0 = אין), note |
 | PlannedDay (יום מתוכנן) | date, jobId? — ימים שסומנו מראש כימי עבודה |
 
 - רישום משמרת: בחירת עבודה (צ'יפים), תאריך (ברירת מחדל היום), שעות — או כניסה/יציאה או מספר שעות, מתג "תעריף שבת", סכום מחושב מוצג גדול וניתן לעריכה. שמירה בלחיצה אחת.
+- החזר נסיעות: לעבודה שמשלמת החזר מופיע במשמרת מתג "החזר נסיעות · X ₪" (דלוק במשמרת חדשה; לחיצה משנה את הסכום למשמרת הזו). הכנסת המשמרת = שכר + נסיעות בכל מקום שסוכמים הכנסה (עבודה, בית, יעד, סיכום שבוע); הנסיעות לא מוכפלות במכפיל שבת, דריסה ידנית של השכר לא נוגעת בהן, ומשמרת קיימת שומרת את הנסיעות שנשמרו לה.
 - מסך עבודה: סכום שהרווחתי החודש (גדול), השבוע, שעות החודש; לוח חודשי שבו כל יום מסומן: עבדתי (נקודה בליים), מתוכנן (טבעת דקה), לא עבדתי (ריק); פילוח לפי עבודה (כרטיסים 2×2 כמו הקטגוריות: שם, שעות, סכום, פס מתוך יעד השבוע); רשימת משמרות אחרונות (עבודה · תאריך · שעות · שבת?) עם סכום; ניהול עבודות (הוספה/עריכה של שם ותעריפים).
 - מסך הבית: שורה אחת מתחת לשלושת המדדים: "הרווחת החודש X ₪ · נחסכו Y ₪" (Y = הכנסה − הוצאות החלק שלי). לא משנה את חישובי התקציב.
 

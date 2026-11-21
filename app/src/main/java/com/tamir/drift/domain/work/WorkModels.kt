@@ -25,6 +25,8 @@ data class JobSummary(
     val payType: PayType = PayType.HOURLY,
     /** Agorot per worked day; 0 for hourly jobs. */
     val dailyRateAgorot: Long = 0L,
+    /** Travel reimbursement ("החזר נסיעות") per shift, agorot; 0 = the job pays none. */
+    val travelPerShiftAgorot: Long = 0L,
 ) {
     val isDaily: Boolean get() = payType == PayType.DAILY
 
@@ -38,6 +40,12 @@ data class ShiftSummary(
     val epochDay: Long,
     /** 0 for a day of a daily-paid job. */
     val hours: Double,
+    /** The wage of the shift (computed or typed manually), without travel. */
     val amountAgorot: Long,
     val isShabbatRate: Boolean = false,
-)
+    /** Travel reimbursement applied to this shift, agorot; kept apart from the wage. */
+    val travelAgorot: Long = 0L,
+) {
+    /** The shift's income: wage + travel reimbursement. Every income sum uses this. */
+    val totalAgorot: Long get() = amountAgorot + travelAgorot
+}

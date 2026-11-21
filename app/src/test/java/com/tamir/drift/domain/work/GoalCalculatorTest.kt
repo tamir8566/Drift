@@ -23,8 +23,8 @@ class GoalCalculatorTest {
     private fun day(y: Int, m: Int, d: Int): LocalDate = LocalDate.of(y, m, d)
     private fun at(y: Int, m: Int, d: Int, h: Int = 12) = LocalDateTime.of(y, m, d, h, 0).atZone(zone).toInstant().toEpochMilli()
 
-    private fun shift(date: LocalDate, hours: Double, shabbat: Boolean = false, jobId: Long = 1L): ShiftSummary =
-        ShiftSummary(nextId++, jobId, date.toEpochDay(), hours, ShiftCalculator.amount(hours, rate, shabbat, 1.5), shabbat)
+    private fun shift(date: LocalDate, hours: Double, shabbat: Boolean = false, jobId: Long = 1L, travel: Long = 0L): ShiftSummary =
+        ShiftSummary(nextId++, jobId, date.toEpochDay(), hours, ShiftCalculator.amount(hours, rate, shabbat, 1.5), shabbat, travel)
 
     private fun tx(amount: Double, ts: Long, mine: Double = amount) =
         TxnSummary(nextId++, amount, mine, "x", CategoryKeys.GROCERIES, ts, TransactionSource.GPAY, isShared = mine != amount)
@@ -42,6 +42,54 @@ class GoalCalculatorTest {
         assertEquals(15.4, s.percentOfGoal, 0.001)
         assertEquals(8, s.daysElapsed)
         assertEquals(30, s.daysInMonth)
+    }
+
+    @Test
+    fun `shift income is wage plus travel`() {
+        val s = shift(day(2026, 11, 2), 8.0, travel = 22_00L)
+        assertEquals(304_00L, s.amountAgorot)
+        assertEquals(22_00L, s.travelAgorot)
+        assertEquals(326_00L, s.totalAgorot)
+        // Shabbat raises the wage only.
+        assertEquals(478_00L, shift(day(2026, 11, 7), 8.0, shabbat = true, travel = 22_00L).totalAgorot)
+        assertEquals(304_00L, shift(day(2026, 11, 3), 8.0).totalAgorot)
+    }
+
+    @Test
+    fun `month totals include travel reimbursement`() {
+        // Two November shifts with travel, one without, one October shift with travel.
+        val shifts = listOf(
+            shift(day(2026, 11, 2), 8.0, travel = 22_00L), shift(day(2026, 11, 3), 8.0, travel = 22_00L),
+            shift(day(2026, 11, 4), 8.0), shift(day(2026, 10, 30), 8.0, travel = 22_00L),
+        )
+        assertEquals(956_00L, GoalCalculator.earnedIn(shifts, nov)) // 3 × 304 + 2 × 22
+        assertEquals(44_00L, GoalCalculator.travelIn(shifts, nov))
+        assertEquals(22_00L, GoalCalculator.travelIn(shifts, YearMonth.of(2026, 10)))
+        val s = GoalCalculator.monthStatus(shifts, listOf(tx(200.0, at(2026, 11, 5))), nov, day(2026, 11, 8), zone, 2_000_00L, rate)
+        assertEquals(956_00L, s.earnedAgorot)
+        assertEquals(756_00L, s.savedAgorot)
+    }
+
+    @Test
+    fun `week income and carry-over include travel reimbursement`() {
+        // Week 1 (1–7 Nov): 3 × (304 + 22) = 978 vs goal 800 → +178 carried. Week 2: 304 + 22.
+        val shifts = listOf(
+            shift(day(2026, 11, 1), 8.0, travel = 22_00L), shift(day(2026, 11, 2), 8.0, travel = 22_00L),
+            shift(day(2026, 11, 3), 8.0, travel = 22_00L), shift(day(2026, 11, 9), 8.0, travel = 22_00L),
+        )
+        val w = GoalCalculator.weekStatus(shifts, day(2026, 11, 10), 800_00L)
+        assertEquals(326_00L, w.incomeAgorot)
+        assertEquals(178_00L, w.carryInAgorot)
+        assertEquals(-296_00L, w.balanceAgorot) // 178 + 326 − 800
+        assertEquals(326_00L, GoalCalculator.incomeIn(shifts, GoalCalculator.weekOf(day(2026, 11, 10))))
+    }
+
+    @Test
+    fun `history counts travel in the saved amount`() {
+        val shifts = listOf(shift(day(2026, 10, 5), 8.0, travel = 22_00L), shift(day(2026, 11, 2), 8.0, travel = 10_50L))
+        val h = GoalCalculator.history(shifts, listOf(tx(100.0, at(2026, 10, 7))), nov, 500_00L, zone)
+        assertEquals(226_00L, h[4].savedAgorot) // 304 + 22 − 100
+        assertEquals(314_50L, h.last().savedAgorot)
     }
 
     @Test

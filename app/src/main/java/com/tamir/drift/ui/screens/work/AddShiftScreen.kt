@@ -30,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -45,6 +46,7 @@ import com.tamir.drift.ui.components.Chip
 import com.tamir.drift.ui.components.ChoiceRow
 import com.tamir.drift.ui.components.DateField
 import com.tamir.drift.ui.components.DriftDialog
+import com.tamir.drift.ui.components.DriftSwitch
 import com.tamir.drift.ui.components.DriftTextField
 import com.tamir.drift.ui.components.EmptyNote
 import com.tamir.drift.ui.components.GlassCard
@@ -70,7 +72,12 @@ private const val MODE_HOURS = "hours"
  * hours, "תעריף שבת" toggle, the computed amount shown large and editable (→ manualAmount).
  * For a daily-paid job the hours inputs are hidden: the amount is the daily rate (× the Shabbat
  * multiplier) and the shift is stored with hours = 0.
- * With [shiftId] the same screen edits an existing shift (and can delete it).
+ * A job with a travel reimbursement adds a "החזר נסיעות · X ₪" switch (on for a new shift; a tap
+ * on it edits the amount for this shift). The big number is then the day total (wage + travel)
+ * with a "שכר A ₪ + נסיעות B ₪" line; the wage stays editable on its own row. Travel is a flat
+ * amount: the Shabbat multiplier and a manual wage do not change it.
+ * With [shiftId] the same screen edits an existing shift (and can delete it); its stored travel
+ * is kept as it was saved.
  */
 @Composable
 fun AddShiftScreen(shiftId: Long?, onDone: () -> Unit) {
@@ -96,6 +103,12 @@ fun AddShiftScreen(shiftId: Long?, onDone: () -> Unit) {
     var amountText by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
     var confirmDelete by remember { mutableStateOf(false) }
+    // Travel reimbursement: on by default for a new shift. A custom amount (set from the dialog,
+    // or the stored one of an edited shift) replaces the job's amount; null = use the job's.
+    var travelOn by remember { mutableStateOf(true) }
+    var travelCustom by remember { mutableStateOf<Long?>(null) }
+    var editTravel by remember { mutableStateOf(false) }
+    var travelDraft by remember { mutableStateOf("") }
 
     // Edit mode: load the shift once.
     LaunchedEffect(shiftId) {
@@ -119,6 +132,9 @@ fun AddShiftScreen(shiftId: Long?, onDone: () -> Unit) {
                 shabbatTouched = true
                 manual = s.manualAmount
                 if (s.manualAmount) amountText = Fmt.moneyExact(s.amountAgorot).replace(",", "")
+                // The stored travel is kept as saved: on with its own amount, or off when the shift had none.
+                travelOn = s.travelAgorot > 0L
+                travelCustom = s.travelAgorot.takeIf { it > 0L }
                 note = s.note ?: ""
             }
             loaded = true
@@ -147,11 +163,24 @@ fun AddShiftScreen(shiftId: Long?, onDone: () -> Unit) {
     val rate = job?.hourlyRateAgorot ?: 0L
     val dailyRate = job?.dailyRateAgorot ?: 0L
     val multiplier = job?.shabbatMultiplier ?: 1.5
-    val computedAgorot = ShiftCalculator.amount(
-        if (daily) PayType.DAILY else PayType.HOURLY, hours ?: 0.0, rate, dailyRate, shabbat, multiplier,
-    )
+    val payType = if (daily) PayType.DAILY else PayType.HOURLY
+    val computedAgorot = ShiftCalculator.amount(payType, hours ?: 0.0, rate, dailyRate, shabbat, multiplier)
     val manualValue = amountText.replace(",", "").toDoubleOrNull()
+    val manualAgorot = if (manual) manualValue?.let { Money.toAgorot(it) } else null
     val shownAmount = if (manual) amountText else Fmt.moneyExact(computedAgorot).replace(",", "")
+    // The wage alone (what is stored as the shift amount), and the travel added on top of it.
+    val wageAgorot = if (manual) manualAgorot ?: 0L else computedAgorot
+    val jobTravel = job?.travelPerShiftAgorot ?: 0L
+    val travelAmount = travelCustom ?: jobTravel
+    val showTravel = jobTravel > 0L || travelCustom != null
+    val travelEnabled = showTravel && travelOn
+    val appliedTravel = ShiftCalculator.travel(travelAmount, travelEnabled)
+    val totalAgorot = ShiftCalculator.dayTotal(
+        payType, hours ?: 0.0, rate, dailyRate, shabbat, multiplier,
+        manualAmountAgorot = if (manual) wageAgorot else null,
+        travelPerShiftAgorot = travelAmount,
+        travelEnabled = travelEnabled,
+    )
     val amountOk = if (manual) manualValue != null && manualValue >= 0.0 else computedAgorot >= 0L
     val timesOk = daily || mode != MODE_TIMES || (startMin != null && endMin != null)
     val hoursOk = daily || (hours != null && hours > 0.0)
@@ -179,7 +208,12 @@ fun AddShiftScreen(shiftId: Long?, onDone: () -> Unit) {
             EmptyNote(stringResource(R.string.shift_no_jobs))
         } else {
             val options = (activeJobs + listOfNotNull(jobs.firstOrNull { it.id == existing?.jobId && !it.isActive })).map { it.id.toString() to it.name }
-            ChoiceRow(options = options, selected = jobId?.toString(), onSelect = { jobId = it.toLongOrNull() })
+            ChoiceRow(options = options, selected = jobId?.toString(), onSelect = {
+                val picked = it.toLongOrNull()
+                // Another job brings its own travel amount; a custom amount belonged to the previous one.
+                if (picked != jobId) travelCustom = null
+                jobId = picked
+            })
         }
 
         DateField(date, { date = it }, stringResource(R.string.shift_date), errorText = stringResource(R.string.date_invalid))
@@ -227,26 +261,63 @@ fun AddShiftScreen(shiftId: Long?, onDone: () -> Unit) {
 
         SwitchRow(stringResource(R.string.shift_shabbat_rate), shabbat, { shabbat = it; shabbatTouched = true })
 
+        // Travel reimbursement: only for a job that pays it (or a shift that already carries one).
+        if (showTravel) {
+            TravelRow(
+                label = stringResource(R.string.shift_travel_switch, Fmt.moneyExact(travelAmount)),
+                hint = stringResource(R.string.shift_travel_hint),
+                checked = travelOn,
+                onCheckedChange = { travelOn = it },
+                onEditAmount = {
+                    travelDraft = Fmt.moneyExact(travelAmount).replace(",", "")
+                    editTravel = true
+                },
+            )
+        }
+
         // Amount: big, editable. Typing switches to a manual amount; a link returns to the computed one.
+        // With travel the big number is the day total (wage + travel) and the wage is edited on its own row.
         GlassCard(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text(stringResource(R.string.shift_amount), style = DriftType.Label13, color = DriftColors.TextSecondary)
+                    Text(
+                        stringResource(if (appliedTravel > 0L) R.string.shift_total_day else R.string.shift_amount),
+                        style = DriftType.Label13, color = DriftColors.TextSecondary,
+                    )
                     if (manual) {
                         Text(stringResource(R.string.shift_amount_manual), style = DriftType.Percent11, color = DriftColors.Orange)
                     }
                 }
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    BasicTextField(
-                        value = shownAmount,
-                        onValueChange = { manual = true; amountText = it },
-                        singleLine = true,
-                        textStyle = DriftType.Big.copy(color = if (manual) DriftColors.Orange else DriftColors.Text),
-                        cursorBrush = SolidColor(DriftColors.Lime),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        modifier = Modifier.weight(1f),
+                if (appliedTravel > 0L) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            Fmt.moneyExact(totalAgorot), style = DriftType.Big, color = DriftColors.Text,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+                        )
+                        Text(stringResource(R.string.shekel), style = DriftType.HeroCurrency, color = DriftColors.TextSecondary)
+                    }
+                    Text(
+                        stringResource(R.string.shift_breakdown, Fmt.moneyExact(wageAgorot), Fmt.moneyExact(appliedTravel)),
+                        style = DriftType.Label12, color = DriftColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
-                    Text(stringResource(R.string.shekel), style = DriftType.HeroCurrency, color = DriftColors.TextSecondary)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(stringResource(R.string.shift_wage), style = DriftType.Label13, color = DriftColors.TextSecondary)
+                        WageField(
+                            value = shownAmount, manual = manual, style = DriftType.Value20,
+                            onValueChange = { manual = true; amountText = it },
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text(stringResource(R.string.shekel), style = DriftType.Label13, color = DriftColors.TextSecondary)
+                    }
+                } else {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        WageField(
+                            value = shownAmount, manual = manual, style = DriftType.Big,
+                            onValueChange = { manual = true; amountText = it },
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text(stringResource(R.string.shekel), style = DriftType.HeroCurrency, color = DriftColors.TextSecondary)
+                    }
                 }
                 val formula = when {
                     daily && shabbat -> stringResource(R.string.shift_amount_formula_daily_shabbat, Fmt.moneyExact(dailyRate), ShiftCalculator.formatHours(multiplier))
@@ -271,12 +342,12 @@ fun AddShiftScreen(shiftId: Long?, onDone: () -> Unit) {
             val j = job ?: return@PrimaryButton
             val d = dateValue ?: return@PrimaryButton
             val h = hours ?: return@PrimaryButton
-            val manualAgorot = if (manual) manualValue?.let { Money.toAgorot(it) } else null
             val (st, en) = if (!daily && mode == MODE_TIMES) startMin to endMin else null to null
             scope.launch {
                 val cur = existing
-                if (cur == null) graph.work.addShift(j.id, d, st, en, h, shabbat, manualAgorot, note)
-                else graph.work.updateShift(cur, j.id, d, st, en, h, shabbat, manualAgorot, note)
+                // The wage (manualAgorot or computed) and the travel are stored apart.
+                if (cur == null) graph.work.addShift(j.id, d, st, en, h, shabbat, manualAgorot, note, appliedTravel)
+                else graph.work.updateShift(cur, j.id, d, st, en, h, shabbat, manualAgorot, note, appliedTravel)
                 onDone()
             }
         })
@@ -298,5 +369,57 @@ fun AddShiftScreen(shiftId: Long?, onDone: () -> Unit) {
             },
             dismissText = stringResource(R.string.cancel),
         ) { Text(stringResource(R.string.work_delete_shift_confirm), style = DriftType.Body, color = DriftColors.TextSecondary) }
+    }
+
+    // Travel amount for this shift only (the job keeps its own amount).
+    if (editTravel) {
+        val draftValue = travelDraft.replace(",", "").toDoubleOrNull()
+        val draftOk = draftValue != null && draftValue >= 0.0
+        DriftDialog(
+            title = stringResource(R.string.shift_travel_edit_title),
+            onDismiss = { editTravel = false },
+            confirmText = stringResource(R.string.save),
+            onConfirm = {
+                if (draftValue != null && draftValue >= 0.0) {
+                    travelCustom = Money.toAgorot(draftValue)
+                    if (draftValue > 0.0) travelOn = true
+                    editTravel = false
+                }
+            },
+            dismissText = stringResource(R.string.cancel),
+            confirmEnabled = draftOk,
+        ) {
+            DriftTextField(
+                travelDraft, { travelDraft = it }, stringResource(R.string.shift_travel_amount), keyboardType = KeyboardType.Decimal,
+                isError = travelDraft.isNotBlank() && !draftOk,
+                supporting = if (travelDraft.isNotBlank() && !draftOk) stringResource(R.string.work_job_invalid_travel) else null,
+            )
+        }
+    }
+}
+
+/** The editable wage: computed until the user types (→ manual, shown in orange). */
+@Composable
+private fun WageField(value: String, manual: Boolean, style: TextStyle, onValueChange: (String) -> Unit, modifier: Modifier = Modifier) {
+    BasicTextField(
+        value = value,
+        onValueChange = onValueChange,
+        singleLine = true,
+        textStyle = style.copy(color = if (manual) DriftColors.Orange else DriftColors.Text),
+        cursorBrush = SolidColor(DriftColors.Lime),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+        modifier = modifier,
+    )
+}
+
+/** "החזר נסיעות · X ₪" with a switch; a tap on the text opens the amount editor. */
+@Composable
+private fun TravelRow(label: String, hint: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit, onEditAmount: () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+        Column(Modifier.weight(1f).padding(end = 12.dp).clip(RoundedCornerShape(6.dp)).clickable(onClick = onEditAmount)) {
+            Text(label, style = DriftType.Body, color = DriftColors.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(hint, style = DriftType.Label11, color = DriftColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        DriftSwitch(checked, onCheckedChange)
     }
 }

@@ -42,9 +42,16 @@ class WorkRepository(private val context: Context, private val db: DriftDatabase
 
     /**
      * Adds a job. [rateAgorot] is per hour for [PayType.HOURLY] and per day for [PayType.DAILY];
-     * the other rate column is stored as 0.
+     * the other rate column is stored as 0. [travelPerShiftAgorot] is the travel reimbursement
+     * per shift (0 = none).
      */
-    suspend fun addJob(name: String, payType: PayType, rateAgorot: Long, shabbatMultiplier: Double): Long {
+    suspend fun addJob(
+        name: String,
+        payType: PayType,
+        rateAgorot: Long,
+        shabbatMultiplier: Double,
+        travelPerShiftAgorot: Long = 0L,
+    ): Long {
         val used = db.jobs().getAll().map { it.color }
         val color = PALETTE.firstOrNull { it !in used } ?: PALETTE[used.size % PALETTE.size]
         return db.jobs().insert(
@@ -55,6 +62,7 @@ class WorkRepository(private val context: Context, private val db: DriftDatabase
                 color = color,
                 payType = payType.name,
                 dailyRateAgorot = if (payType == PayType.DAILY) rateAgorot else 0L,
+                travelPerShiftAgorot = travelPerShiftAgorot.coerceAtLeast(0L),
             ),
         )
     }
@@ -64,8 +72,10 @@ class WorkRepository(private val context: Context, private val db: DriftDatabase
     suspend fun setJobActive(id: Long, active: Boolean) = db.jobs().setActive(id, active)
 
     /**
-     * Saves a shift. The amount is computed from the job unless [manualAmountAgorot] is given
-     * (PRD: editable computed amount → manualAmount = true).
+     * Saves a shift. The amount (wage) is computed from the job unless [manualAmountAgorot] is given
+     * (PRD: editable computed amount → manualAmount = true). [travelAgorot] is the travel
+     * reimbursement applied to this shift (0 = none); it is stored apart from the wage and is not
+     * affected by the Shabbat multiplier or by a manual wage.
      */
     suspend fun addShift(
         jobId: Long,
@@ -76,6 +86,7 @@ class WorkRepository(private val context: Context, private val db: DriftDatabase
         isShabbatRate: Boolean,
         manualAmountAgorot: Long?,
         note: String?,
+        travelAgorot: Long = 0L,
     ): Long {
         val job = db.jobs().getById(jobId)
         val amount = ShiftCalculator.resolve(
@@ -93,6 +104,7 @@ class WorkRepository(private val context: Context, private val db: DriftDatabase
                 amountAgorot = amount,
                 manualAmount = manualAmountAgorot != null,
                 note = note?.takeIf { it.isNotBlank() },
+                travelAgorot = travelAgorot.coerceAtLeast(0L),
             ),
         )
     }
@@ -107,6 +119,8 @@ class WorkRepository(private val context: Context, private val db: DriftDatabase
         isShabbatRate: Boolean,
         manualAmountAgorot: Long?,
         note: String?,
+        /** Defaults to what the shift already has: editing keeps the stored travel. */
+        travelAgorot: Long = existing.travelAgorot,
     ) {
         val job = db.jobs().getById(jobId)
         val amount = ShiftCalculator.resolve(
@@ -124,6 +138,7 @@ class WorkRepository(private val context: Context, private val db: DriftDatabase
                 amountAgorot = amount,
                 manualAmount = manualAmountAgorot != null,
                 note = note?.takeIf { it.isNotBlank() },
+                travelAgorot = travelAgorot.coerceAtLeast(0L),
             ),
         )
     }
@@ -138,17 +153,18 @@ class WorkRepository(private val context: Context, private val db: DriftDatabase
     }
 
     companion object {
-        const val SEED_RATE_AGOROT = 38_00L
+        const val SEED_RATE_AGOROT = 40_00L
 
         /** Palette only (PRD): lime, teal, orange and their softer variants. */
         val PALETTE: List<Long> = listOf(0xFFC5F36FL, 0xFF2EE6C5L, 0xFFFFB26BL, 0x99C5F36FL, 0x992EE6C5L, 0x99FFB26BL)
     }
 }
 
-fun JobEntity.toSummary(): JobSummary = JobSummary(id, name, hourlyRateAgorot, shabbatMultiplier, isActive, pay, dailyRateAgorot)
+fun JobEntity.toSummary(): JobSummary =
+    JobSummary(id, name, hourlyRateAgorot, shabbatMultiplier, isActive, pay, dailyRateAgorot, travelPerShiftAgorot)
 
 fun List<JobEntity>.toJobSummaries(): List<JobSummary> = map { it.toSummary() }
 
-fun ShiftEntity.toSummary(): ShiftSummary = ShiftSummary(id, jobId, date, hours, amountAgorot, isShabbatRate)
+fun ShiftEntity.toSummary(): ShiftSummary = ShiftSummary(id, jobId, date, hours, amountAgorot, isShabbatRate, travelAgorot)
 
 fun List<ShiftEntity>.toShiftSummaries(): List<ShiftSummary> = map { it.toSummary() }

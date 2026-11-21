@@ -30,7 +30,7 @@ data class MonthGoalStatus(
 ) {
     /** True when the main job is paid per day — the UI then shows "עוד כ־N ימי עבודה". */
     val mainJobIsDaily: Boolean get() = mainPayType == PayType.DAILY
-    /** PRD: saved this month = shifts income − Σ amountMine of the month's transactions. May be negative. */
+    /** PRD: saved this month = shifts income (wage + travel) − Σ amountMine of the month's transactions. May be negative. */
     val savedAgorot: Long get() = earnedAgorot - spentAgorot
 
     /** PRD: percent of the monthly goal. */
@@ -150,11 +150,18 @@ object GoalCalculator {
         return hoursIn(shifts.filter { it.jobId in hourlyIds }, month)
     }
 
-    /** Σ shift amounts whose day falls in [month]. */
+    /** Σ shift income (wage + travel reimbursement) of the shifts whose day falls in [month]. */
     fun earnedIn(shifts: List<ShiftSummary>, month: YearMonth): Long {
         val first = month.atDay(1).toEpochDay()
         val last = month.atEndOfMonth().toEpochDay()
-        return shifts.filter { it.epochDay in first..last }.sumOf { it.amountAgorot }
+        return shifts.filter { it.epochDay in first..last }.sumOf { it.totalAgorot }
+    }
+
+    /** The travel-reimbursement part of [earnedIn] ("מתוכם נסיעות"). */
+    fun travelIn(shifts: List<ShiftSummary>, month: YearMonth): Long {
+        val first = month.atDay(1).toEpochDay()
+        val last = month.atEndOfMonth().toEpochDay()
+        return shifts.filter { it.epochDay in first..last }.sumOf { it.travelAgorot }
     }
 
     /** Σ hours of shifts in [month]. */
@@ -210,8 +217,9 @@ object GoalCalculator {
     fun prorate(weeklyGoalAgorot: Long, days: Int): Long =
         if (days >= 7) weeklyGoalAgorot else (weeklyGoalAgorot.toDouble() * days / 7.0).roundToLong()
 
+    /** Σ shift income (wage + travel reimbursement) inside [range]. */
     fun incomeIn(shifts: List<ShiftSummary>, range: WeekRange): Long =
-        shifts.filter { range.contains(it.epochDay) }.sumOf { it.amountAgorot }
+        shifts.filter { range.contains(it.epochDay) }.sumOf { it.totalAgorot }
 
     /**
      * PRD: the week of [today] against the weekly goal. Surplus/deficit of the earlier weeks of

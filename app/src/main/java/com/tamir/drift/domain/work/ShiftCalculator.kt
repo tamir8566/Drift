@@ -2,7 +2,10 @@ package com.tamir.drift.domain.work
 
 import kotlin.math.roundToLong
 
-/** PRD: amount = hours × rate × (shabbat ? multiplier : 1); the user may override it manually. */
+/**
+ * PRD: amount = hours × rate × (shabbat ? multiplier : 1); the user may override it manually.
+ * A job may also pay a flat travel reimbursement per shift, added on top of the wage ([dayTotal]).
+ */
 object ShiftCalculator {
 
     const val MINUTES_PER_DAY = 24 * 60
@@ -52,6 +55,30 @@ object ShiftCalculator {
         shabbatMultiplier: Double,
         manualAmountAgorot: Long?,
     ): Long = manualAmountAgorot ?: amount(payType, hours, hourlyRateAgorot, dailyRateAgorot, isShabbatRate, shabbatMultiplier)
+
+    /**
+     * Travel reimbursement ("החזר נסיעות") applied to one shift: the per-shift amount when the
+     * toggle is on, otherwise 0. A flat amount — never multiplied by the Shabbat multiplier.
+     */
+    fun travel(travelPerShiftAgorot: Long, travelEnabled: Boolean): Long =
+        if (travelEnabled && travelPerShiftAgorot > 0L) travelPerShiftAgorot else 0L
+
+    /**
+     * Day total = wage + travel. The wage is the manual override when given, else the computed
+     * amount (with the Shabbat multiplier); travel is added as is and is not touched by either.
+     */
+    fun dayTotal(
+        payType: PayType,
+        hours: Double,
+        hourlyRateAgorot: Long,
+        dailyRateAgorot: Long,
+        isShabbatRate: Boolean,
+        shabbatMultiplier: Double,
+        manualAmountAgorot: Long?,
+        travelPerShiftAgorot: Long,
+        travelEnabled: Boolean,
+    ): Long = resolve(payType, hours, hourlyRateAgorot, dailyRateAgorot, isShabbatRate, shabbatMultiplier, manualAmountAgorot) +
+        travel(travelPerShiftAgorot, travelEnabled)
 
     /**
      * Hours between two minutes-of-day. An end at or before the start means the shift crossed
