@@ -1,7 +1,5 @@
 package com.tamir.drift.ui.components
 
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -37,6 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -46,6 +45,7 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -54,7 +54,7 @@ import com.tamir.drift.ui.format.Fmt
 import com.tamir.drift.ui.theme.DriftColors
 import com.tamir.drift.ui.theme.DriftType
 
-/** Bar fill animation (PRD: 0.6 s). */
+/** Bar fill animation (PRD: 0.6 s): a bar grows from zero when it first appears ([animatedBarFraction]). */
 const val BAR_ANIM_MS = 600
 
 /**
@@ -140,11 +140,14 @@ private fun safeFraction(fraction: Float): Float = if (fraction.isNaN()) 0f else
  *
  * Pass `bar.fraction` of the same [BarValue] whose percent is printed next to the line: a value
  * above 100% draws a full line while the text keeps the real percent, a negative one draws empty.
+ *
+ * The line grows from zero the first time it appears. [pulseAtMillis] (see [pulseProgress]) plays
+ * the single lime ring around the dot — the "goal reached" moment.
  */
 @Composable
-fun BudgetLine(fraction: Float, modifier: Modifier = Modifier, color: Color = DriftColors.Lime) {
-    val target = safeFraction(fraction)
-    val animated by animateFloatAsState(target, animationSpec = tween(BAR_ANIM_MS), label = "budgetLine")
+fun BudgetLine(fraction: Float, modifier: Modifier = Modifier, color: Color = DriftColors.Lime, pulseAtMillis: Long = 0L) {
+    val animated = animatedBarFraction(safeFraction(fraction))
+    val ring = pulseProgress(pulseAtMillis)
     Box(modifier.fillMaxWidth().height(10.dp), contentAlignment = Alignment.CenterStart) {
         Box(Modifier.fillMaxWidth().height(2.dp).background(DriftColors.LineTrack))
         Box(Modifier.fillMaxWidth(animated).height(2.dp).background(color))
@@ -160,28 +163,49 @@ fun BudgetLine(fraction: Float, modifier: Modifier = Modifier, color: Color = Dr
                     }
                 }
                 .size(10.dp)
+                // The ring is drawn around the dot's centre and may reach outside its 10dp.
+                .drawBehind { drawPulseRing(ring, center) }
                 .background(color, CircleShape),
         )
     }
 }
 
-/** 3dp category bar with a white 10% track; animated fill. */
+/**
+ * 3dp category bar with a white 10% track; the fill grows from zero the first time it appears.
+ * [pulseAtMillis] (see [pulseProgress]) plays the single lime ring at the end of the fill — the
+ * "week in surplus" moment.
+ */
 @Composable
-fun CategoryBar(fraction: Float, color: Color, modifier: Modifier = Modifier) {
-    val animated by animateFloatAsState(safeFraction(fraction), animationSpec = tween(BAR_ANIM_MS), label = "categoryBar")
-    Box(modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(99.dp)).background(DriftColors.BarTrack)) {
-        Box(Modifier.fillMaxWidth(animated).fillMaxHeight().background(color))
+fun CategoryBar(fraction: Float, color: Color, modifier: Modifier = Modifier, pulseAtMillis: Long = 0L) {
+    val animated = animatedBarFraction(safeFraction(fraction))
+    val ring = pulseProgress(pulseAtMillis)
+    Box(
+        modifier.fillMaxWidth().height(3.dp).drawBehind {
+            // The fill starts at the start edge: its end is on the left in a right-to-left layout.
+            val x = if (layoutDirection == LayoutDirection.Rtl) size.width * (1f - animated) else size.width * animated
+            drawPulseRing(ring, Offset(x, size.height / 2f))
+        },
+    ) {
+        Box(Modifier.fillMaxSize().clip(RoundedCornerShape(99.dp)).background(DriftColors.BarTrack)) {
+            Box(Modifier.fillMaxWidth(animated).fillMaxHeight().background(color))
+        }
     }
 }
 
-/** Segmented bar (category breakdown). Segments are (fraction, color). */
+/**
+ * Segmented bar (category breakdown). Segments are (fraction, color). The whole bar is revealed
+ * from the start edge the first time it appears; the segments keep their proportions.
+ */
 @Composable
 fun SegmentedBar(segments: List<Pair<Float, Color>>, modifier: Modifier = Modifier, height: Dp = 6.dp) {
-    Row(modifier.fillMaxWidth().height(height).clip(RoundedCornerShape(99.dp)).background(DriftColors.BarTrack)) {
-        val shown = segments.filter { it.first > 0f }
-        shown.forEachIndexed { i, (f, c) ->
-            Box(Modifier.weight(f).fillMaxHeight().background(c))
-            if (i < shown.lastIndex) Spacer(Modifier.width(2.dp))
+    val shown = segments.filter { it.first > 0f }
+    val reveal = animatedBarFraction(if (shown.isEmpty()) 0f else 1f)
+    Box(modifier.fillMaxWidth().height(height).clip(RoundedCornerShape(99.dp)).background(DriftColors.BarTrack)) {
+        Row(Modifier.fillMaxWidth(reveal).fillMaxHeight()) {
+            shown.forEachIndexed { i, (f, c) ->
+                Box(Modifier.weight(f).fillMaxHeight().background(c))
+                if (i < shown.lastIndex) Spacer(Modifier.width(2.dp))
+            }
         }
     }
 }

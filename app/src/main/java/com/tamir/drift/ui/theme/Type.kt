@@ -16,10 +16,16 @@ val Heebo = FontFamily(
     Font(R.font.heebo_700, FontWeight.Bold),
 )
 
+/**
+ * Tabular figures: every digit takes the same width, so a number that rolls or changes does not
+ * make the text around it jump. Set on the styles that show numbers.
+ */
+private const val TABULAR = "tnum"
+
 /** Text styles taken from the design mockup. */
 object DriftType {
     /** 68sp, weight 300, letter-spacing −3, line-height 0.9. */
-    val Hero = TextStyle(fontFamily = Heebo, fontSize = 68.sp, fontWeight = FontWeight.Light, letterSpacing = (-3).sp, lineHeight = 61.sp)
+    val Hero = TextStyle(fontFamily = Heebo, fontSize = 68.sp, fontWeight = FontWeight.Light, letterSpacing = (-3).sp, lineHeight = 61.sp, fontFeatureSettings = TABULAR)
     val HeroCurrency = TextStyle(fontFamily = Heebo, fontSize = 24.sp, fontWeight = FontWeight.Light)
     /** Header date: 13sp, 500, letter-spacing 2. */
     val HeaderLabel = TextStyle(fontFamily = Heebo, fontSize = 13.sp, fontWeight = FontWeight.Medium, letterSpacing = 2.sp)
@@ -29,18 +35,18 @@ object DriftType {
     val Label12 = TextStyle(fontFamily = Heebo, fontSize = 12.sp, fontWeight = FontWeight.Normal)
     val Label11 = TextStyle(fontFamily = Heebo, fontSize = 11.sp, fontWeight = FontWeight.Normal)
     val Tag10 = TextStyle(fontFamily = Heebo, fontSize = 10.sp, fontWeight = FontWeight.Normal)
-    val Percent11 = TextStyle(fontFamily = Heebo, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+    val Percent11 = TextStyle(fontFamily = Heebo, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFeatureSettings = TABULAR)
     val Link12 = TextStyle(fontFamily = Heebo, fontSize = 12.sp, fontWeight = FontWeight.Normal)
     /** Stat / category value: 20sp, 700. */
-    val Value20 = TextStyle(fontFamily = Heebo, fontSize = 20.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.3).sp)
+    val Value20 = TextStyle(fontFamily = Heebo, fontSize = 20.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.3).sp, fontFeatureSettings = TABULAR)
     /** Value of a three-column stat tile: 18sp, 700 — three values must fit side by side on a 390dp screen. */
-    val Value18 = TextStyle(fontFamily = Heebo, fontSize = 18.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.3).sp)
+    val Value18 = TextStyle(fontFamily = Heebo, fontSize = 18.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.3).sp, fontFeatureSettings = TABULAR)
     /** Transaction row: name 14sp 500, amount 15sp 700. */
     val RowTitle = TextStyle(fontFamily = Heebo, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-    val RowAmount = TextStyle(fontFamily = Heebo, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+    val RowAmount = TextStyle(fontFamily = Heebo, fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFeatureSettings = TABULAR)
     val Body = TextStyle(fontFamily = Heebo, fontSize = 15.sp, fontWeight = FontWeight.Normal)
     val Title = TextStyle(fontFamily = Heebo, fontSize = 20.sp, fontWeight = FontWeight.Medium)
-    val Big = TextStyle(fontFamily = Heebo, fontSize = 32.sp, fontWeight = FontWeight.Light, letterSpacing = (-1).sp)
+    val Big = TextStyle(fontFamily = Heebo, fontSize = 32.sp, fontWeight = FontWeight.Light, letterSpacing = (-1).sp, fontFeatureSettings = TABULAR)
 }
 
 val DriftTypography = Typography(

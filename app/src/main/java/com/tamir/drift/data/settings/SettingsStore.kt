@@ -3,17 +3,23 @@ package com.tamir.drift.data.settings
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.tamir.drift.BuildConfig
+import com.tamir.drift.domain.backup.PrefEntry
+import com.tamir.drift.domain.backup.PrefTypes
 import com.tamir.drift.domain.money.FxRates
 import com.tamir.drift.domain.time.TrackingWindow
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
@@ -61,6 +67,24 @@ data class Settings(
     val twoEmployersDismissedYear: Int = 0,
     /** The calendar year whose 5 January "renew the tax coordination" reminder was already sent. */
     val taxReminderYear: Int = 0,
+    /** "משוב": bars, numbers and screens move (off = everything snaps). */
+    val feedbackAnimations: Boolean = true,
+    /** "משוב": a short vibration on save, delete, steppers and the goal moment. */
+    val feedbackHaptics: Boolean = true,
+    /** "משוב": the three small sounds (only while the phone's ringer is on). */
+    val feedbackSound: Boolean = true,
+    /** "גיבוי אוטומטי שבועי" is switched on. */
+    val backupAutoEnabled: Boolean = false,
+    /** The folder the user picked for the automatic backups (a persisted tree URI); "" = none. */
+    val backupTreeUri: String = "",
+    /** The picked folder's display name, for the settings row. */
+    val backupTreeName: String = "",
+    /** When a backup of any kind (manual or automatic) last succeeded (epoch millis; 0 = never). */
+    val lastBackupMillis: Long = 0L,
+    /** When the automatic backup last failed without a success since (epoch millis; 0 = it is fine). */
+    val backupAutoFailedMillis: Long = 0L,
+    /** When the home row "אין גיבוי לנתונים" was dismissed (epoch millis; 0 = never). */
+    val backupNudgeDismissedMillis: Long = 0L,
 ) {
     /**
      * The window statistics use right now. Until the tracking start arrives, everything since the
@@ -85,6 +109,21 @@ data class Settings(
 
 /** DataStore-backed settings (PRD "Settings (DataStore)"). */
 class SettingsStore(private val context: Context) {
+
+    companion object {
+        /** The lists whose new rows land with a tint ([swapListSeen]). */
+        const val LIST_HOME_RECENT = "home_recent"
+        const val LIST_ALL_TRANSACTIONS = "all_transactions"
+        const val LIST_WORK_RECENT = "work_recent"
+        const val LIST_ALL_SHIFTS = "all_shifts"
+
+        /** Preferences that describe this device and install, not the data: a restore leaves them alone. */
+        val DEVICE_KEYS: Set<String> = setOf(
+            "backup_auto_enabled", "backup_tree_uri", "backup_tree_name", "backup_last_millis",
+            "backup_auto_failed_millis", "backup_nudge_dismissed_millis",
+            "last_update_check", "whats_new_version", "whats_new_fingerprint",
+        )
+    }
 
     private object Keys {
         val smsSenders = stringSetPreferencesKey("sms_senders")
@@ -114,6 +153,25 @@ class SettingsStore(private val context: Context) {
         val insuranceCoordinationYear = intPreferencesKey("insurance_coordination_year")
         val twoEmployersDismissedYear = intPreferencesKey("two_employers_dismissed_year")
         val taxReminderYear = intPreferencesKey("tax_reminder_year")
+        val feedbackAnimations = booleanPreferencesKey("feedback_animations")
+        val feedbackHaptics = booleanPreferencesKey("feedback_haptics")
+        val feedbackSound = booleanPreferencesKey("feedback_sound")
+        val backupAutoEnabled = booleanPreferencesKey("backup_auto_enabled")
+        val backupTreeUri = stringPreferencesKey("backup_tree_uri")
+        val backupTreeName = stringPreferencesKey("backup_tree_name")
+        val lastBackup = longPreferencesKey("backup_last_millis")
+        val backupAutoFailed = longPreferencesKey("backup_auto_failed_millis")
+        val backupNudgeDismissed = longPreferencesKey("backup_nudge_dismissed_millis")
+        /** The month ("yyyy-MM") whose "goal reached" moment was already played. */
+        val celebratedGoalMonth = stringPreferencesKey("celebrated_goal_month")
+        /** The week (epoch day of its Sunday) whose "week in surplus" moment was already played. */
+        val celebratedWeekStart = longPreferencesKey("celebrated_week_start")
+        /** "מה חדש": the versionCode seen at the last start and the fingerprint of the notes shown last. */
+        val whatsNewVersion = intPreferencesKey("whats_new_version")
+        val whatsNewFingerprint = stringPreferencesKey("whats_new_fingerprint")
+
+        /** When a list was last looked at (rows created after it land with a tint); one key per list. */
+        fun listSeen(list: String) = longPreferencesKey("list_seen_$list")
     }
 
     val settings: Flow<Settings> = context.dataStore.data.map { p ->
@@ -145,8 +203,19 @@ class SettingsStore(private val context: Context) {
             insuranceCoordinationYear = p[Keys.insuranceCoordinationYear] ?: 0,
             twoEmployersDismissedYear = p[Keys.twoEmployersDismissedYear] ?: 0,
             taxReminderYear = p[Keys.taxReminderYear] ?: 0,
+            feedbackAnimations = p[Keys.feedbackAnimations] ?: true,
+            feedbackHaptics = p[Keys.feedbackHaptics] ?: true,
+            feedbackSound = p[Keys.feedbackSound] ?: true,
+            backupAutoEnabled = p[Keys.backupAutoEnabled] ?: false,
+            backupTreeUri = p[Keys.backupTreeUri] ?: "",
+            backupTreeName = p[Keys.backupTreeName] ?: "",
+            lastBackupMillis = p[Keys.lastBackup] ?: 0L,
+            backupAutoFailedMillis = p[Keys.backupAutoFailed] ?: 0L,
+            backupNudgeDismissedMillis = p[Keys.backupNudgeDismissed] ?: 0L,
         )
-    }
+    // Keys that are not part of [Settings] (a list's "last seen" time, …) are written often and
+    // must not make every screen recompute.
+    }.distinctUntilChanged()
 
     suspend fun current(): Settings = settings.first()
 
@@ -181,6 +250,126 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setTwoEmployersDismissed(year: Int) = context.dataStore.edit { it[Keys.twoEmployersDismissedYear] = year }
     suspend fun setTaxReminderYear(year: Int) = context.dataStore.edit { it[Keys.taxReminderYear] = year }
+
+    suspend fun setFeedbackAnimations(v: Boolean) = context.dataStore.edit { it[Keys.feedbackAnimations] = v }
+    suspend fun setFeedbackHaptics(v: Boolean) = context.dataStore.edit { it[Keys.feedbackHaptics] = v }
+    suspend fun setFeedbackSound(v: Boolean) = context.dataStore.edit { it[Keys.feedbackSound] = v }
+
+    suspend fun setBackupAutoEnabled(v: Boolean) = context.dataStore.edit {
+        it[Keys.backupAutoEnabled] = v
+        // Switched off: an old failure is no longer something to look at.
+        if (!v) it[Keys.backupAutoFailed] = 0L
+    }
+
+    /** The folder for the automatic backups was picked (its persisted tree URI and display name). */
+    suspend fun setBackupFolder(treeUri: String, name: String) = context.dataStore.edit {
+        it[Keys.backupTreeUri] = treeUri
+        it[Keys.backupTreeName] = name
+        it[Keys.backupAutoFailed] = 0L
+    }
+
+    /** A backup was written. An automatic one also clears the failure mark of the automatic backup. */
+    suspend fun recordBackupSuccess(nowMillis: Long, automatic: Boolean) = context.dataStore.edit {
+        it[Keys.lastBackup] = nowMillis
+        if (automatic) it[Keys.backupAutoFailed] = 0L
+    }
+
+    suspend fun recordAutoBackupFailure(nowMillis: Long) = context.dataStore.edit { it[Keys.backupAutoFailed] = nowMillis }
+    suspend fun dismissBackupNudge(nowMillis: Long) = context.dataStore.edit { it[Keys.backupNudgeDismissed] = nowMillis }
+
+    /**
+     * Marks [list] as looked at now and returns when it was looked at before (0 = never). Rows
+     * created after the returned time are the ones that are new to the user.
+     */
+    suspend fun swapListSeen(list: String, nowMillis: Long): Long {
+        var previous = 0L
+        context.dataStore.edit {
+            previous = it[Keys.listSeen(list)] ?: 0L
+            it[Keys.listSeen(list)] = nowMillis
+        }
+        return previous
+    }
+
+    /** True the first time [month] ("yyyy-MM") reaches its saving goal — the moment is played once. */
+    suspend fun markGoalCelebrated(month: String): Boolean {
+        var first = false
+        context.dataStore.edit {
+            if (it[Keys.celebratedGoalMonth] != month) {
+                it[Keys.celebratedGoalMonth] = month
+                first = true
+            }
+        }
+        return first
+    }
+
+    /** True the first time the week that starts on [weekStartEpochDay] is in surplus. */
+    suspend fun markWeekCelebrated(weekStartEpochDay: Long): Boolean {
+        var first = false
+        context.dataStore.edit {
+            if (it[Keys.celebratedWeekStart] != weekStartEpochDay) {
+                it[Keys.celebratedWeekStart] = weekStartEpochDay
+                first = true
+            }
+        }
+        return first
+    }
+
+    /** "מה חדש": the versionCode recorded at the last start (0 = none) and the fingerprint of the notes shown last. */
+    suspend fun whatsNewSeen(): Pair<Int, String> {
+        val p = context.dataStore.data.first()
+        return (p[Keys.whatsNewVersion] ?: 0) to (p[Keys.whatsNewFingerprint] ?: "")
+    }
+
+    /** Records the running version; with [fingerprint] also the notes that were shown (or skipped as already known). */
+    suspend fun setWhatsNewSeen(version: Int, fingerprint: String?) = context.dataStore.edit {
+        it[Keys.whatsNewVersion] = version
+        if (fingerprint != null) it[Keys.whatsNewFingerprint] = fingerprint
+    }
+
+    /** Backup: every stored preference, with its type. */
+    suspend fun exportAll(): List<PrefEntry> =
+        context.dataStore.data.first().asMap().mapNotNull { (key, value) -> toEntry(key.name, value) }
+
+    /**
+     * Restore: the stored preferences are replaced by [entries]. What describes this device rather
+     * than the data ([DEVICE_KEYS]: the backup folder and its state, the update check, the "מה חדש"
+     * record) is kept as it is here. [backupCreatedAt] becomes the "last backup" time when it is
+     * newer than the one known here — a backup from that moment evidently exists.
+     */
+    suspend fun importAll(entries: List<PrefEntry>, backupCreatedAt: Long) = context.dataStore.edit { prefs ->
+        val kept: List<Pair<String, Any>> = prefs.asMap().filter { it.key.name in DEVICE_KEYS }.map { it.key.name to it.value }
+        prefs.clear()
+        for (entry in entries) {
+            if (entry.key !in DEVICE_KEYS) putEntry(prefs, entry)
+        }
+        for ((name, value) in kept) {
+            toEntry(name, value)?.let { putEntry(prefs, it) }
+        }
+        if (backupCreatedAt > (prefs[Keys.lastBackup] ?: 0L)) prefs[Keys.lastBackup] = backupCreatedAt
+    }
+
+    private fun toEntry(name: String, value: Any?): PrefEntry? = when (value) {
+        is Boolean -> PrefEntry(name, PrefTypes.BOOLEAN, value.toString())
+        is Int -> PrefEntry(name, PrefTypes.INT, value.toString())
+        is Long -> PrefEntry(name, PrefTypes.LONG, value.toString())
+        is Float -> PrefEntry(name, PrefTypes.FLOAT, value.toString())
+        is Double -> PrefEntry(name, PrefTypes.DOUBLE, value.toString())
+        is String -> PrefEntry(name, PrefTypes.STRING, value)
+        is Set<*> -> PrefEntry(name, PrefTypes.STRING_SET, values = value.filterIsInstance<String>().toSet())
+        else -> null
+    }
+
+    private fun putEntry(prefs: MutablePreferences, entry: PrefEntry) {
+        when (entry.type) {
+            PrefTypes.BOOLEAN -> prefs[booleanPreferencesKey(entry.key)] = entry.value == "true"
+            PrefTypes.INT -> entry.value.toIntOrNull()?.let { v -> prefs[intPreferencesKey(entry.key)] = v }
+            PrefTypes.LONG -> entry.value.toLongOrNull()?.let { v -> prefs[longPreferencesKey(entry.key)] = v }
+            PrefTypes.FLOAT -> entry.value.toFloatOrNull()?.let { v -> prefs[floatPreferencesKey(entry.key)] = v }
+            PrefTypes.DOUBLE -> entry.value.toDoubleOrNull()?.let { v -> prefs[doublePreferencesKey(entry.key)] = v }
+            PrefTypes.STRING -> prefs[stringPreferencesKey(entry.key)] = entry.value
+            PrefTypes.STRING_SET -> prefs[stringSetPreferencesKey(entry.key)] = entry.values
+        }
+    }
 
     /**
      * Called at startup. Makes sure the tracking start exists and, once per install, moves it to

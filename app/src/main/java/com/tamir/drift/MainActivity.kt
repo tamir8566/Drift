@@ -19,7 +19,9 @@ import androidx.core.content.ContextCompat
 import com.tamir.drift.di.AppGraph
 import com.tamir.drift.notify.DeepLink
 import com.tamir.drift.ui.LocalAppGraph
+import com.tamir.drift.ui.components.ProvideFeedback
 import com.tamir.drift.ui.nav.DriftApp
+import com.tamir.drift.ui.release.WhatsNewHost
 import com.tamir.drift.ui.theme.DriftTheme
 import com.tamir.drift.update.LocalUpdateController
 import com.tamir.drift.update.UpdateController
@@ -34,18 +36,35 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         val graph = AppGraph.get(this)
+        // The three feedback sounds are loaded while the first screen is drawn.
+        graph.sounds.warmUp()
         // Only a fresh launch: after a rotation the same intent must not navigate again.
         if (savedInstanceState == null) readDeepLink(intent)
         setContent {
             val updateController = remember { UpdateController() }
             CompositionLocalProvider(LocalAppGraph provides graph, LocalUpdateController provides updateController) {
                 DriftTheme {
-                    NotificationPermissionRequest()
-                    DriftApp(deepLink = pendingDeepLink.value, onDeepLinkConsumed = { pendingDeepLink.value = null })
-                    UpdateDialogHost()
+                    // Motion, haptics and sound follow the three "משוב" switches in settings.
+                    ProvideFeedback {
+                        NotificationPermissionRequest()
+                        DriftApp(deepLink = pendingDeepLink.value, onDeepLinkConsumed = { pendingDeepLink.value = null })
+                        UpdateDialogHost()
+                        WhatsNewHost()
+                    }
                 }
             }
         }
+    }
+
+    /** The "captured" sound is for a capture that arrives while the app is on screen — only then. */
+    override fun onStart() {
+        super.onStart()
+        AppGraph.get(this).appInForeground = true
+    }
+
+    override fun onStop() {
+        AppGraph.get(this).appInForeground = false
+        super.onStop()
     }
 
     /** The activity is singleTask: a notification tapped while the app is open arrives here. */

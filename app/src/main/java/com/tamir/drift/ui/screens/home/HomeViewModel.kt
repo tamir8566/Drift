@@ -9,6 +9,7 @@ import com.tamir.drift.data.repo.Money
 import com.tamir.drift.data.repo.toShiftSummaries
 import com.tamir.drift.data.repo.toSummaries
 import com.tamir.drift.di.AppGraph
+import com.tamir.drift.domain.backup.BackupNudge
 import com.tamir.drift.domain.budget.CategorySpend
 import com.tamir.drift.domain.budget.MonthSummary
 import com.tamir.drift.domain.classify.UnsortedMerchants
@@ -19,6 +20,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
@@ -42,9 +44,13 @@ data class HomeUiState(
     val goalOnTrack: Boolean? = null,
     /** Merchants whose expenses sit in "אחר" with no learned rule ("N בתי עסק מחכים לסיווג"). */
     val unsortedMerchants: Int = 0,
+    /** The weekly automatic backup is on and its last run failed ("הגיבוי האוטומטי נכשל · לבדוק"). */
+    val backupFailed: Boolean = false,
+    /** No backup of any kind yet, a fortnight after the first launch ("אין גיבוי לנתונים · להגדיר"). */
+    val backupNudge: Boolean = false,
 )
 
-class HomeViewModel(graph: AppGraph) : ViewModel() {
+class HomeViewModel(private val graph: AppGraph) : ViewModel() {
 
     /** Categories with the merchant rules beside them (the typed combine below takes five flows). */
     private val catalog = combine(graph.categories.categories, graph.categories.rules) { cats, rules -> cats to rules }
@@ -100,6 +106,19 @@ class HomeViewModel(graph: AppGraph) : ViewModel() {
             smsCaptureConfigured = settings.smsSenders.isNotEmpty(),
             goalOnTrack = goalStatus.onTrack,
             unsortedMerchants = UnsortedMerchants.find(allTxSummaries, ruleModels).size,
+            backupFailed = settings.backupAutoEnabled && settings.backupAutoFailedMillis > 0L,
+            backupNudge = BackupNudge.shouldShow(
+                firstLaunchEpochDay = settings.firstLaunchEpochDay,
+                todayEpochDay = today.toEpochDay(),
+                lastBackupMillis = settings.lastBackupMillis,
+                dismissedAtMillis = settings.backupNudgeDismissedMillis,
+                nowMillis = System.currentTimeMillis(),
+            ),
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState())
+
+    /** "אין גיבוי לנתונים" was dismissed: it stays away for 30 days. */
+    fun dismissBackupNudge() {
+        viewModelScope.launch { graph.settings.dismissBackupNudge(System.currentTimeMillis()) }
+    }
 }

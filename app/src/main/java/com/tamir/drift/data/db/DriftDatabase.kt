@@ -124,11 +124,27 @@ abstract class DriftDatabase : RoomDatabase() {
             }
         }
 
+        /** The database file name (under the app's databases directory). */
+        const val NAME = "drift.db"
+
+        private val MIGRATIONS: Array<Migration> get() = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+
         fun build(context: Context): DriftDatabase =
-            Room.databaseBuilder(context.applicationContext, DriftDatabase::class.java, "drift.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+            Room.databaseBuilder(context.applicationContext, DriftDatabase::class.java, NAME)
+                .addMigrations(*MIGRATIONS)
                 // Safety net for any other version jump (was already the policy before v2).
                 .fallbackToDestructiveMigration()
+                .build()
+
+        /**
+         * The same database over another file — used to try a backup's database before it replaces
+         * the real one. Opening it runs the migrations and Room's schema check; there is no
+         * destructive fallback here, so a file that cannot be brought to the current schema fails
+         * to open instead of being silently emptied.
+         */
+        fun buildForCheck(context: Context, fileName: String): DriftDatabase =
+            Room.databaseBuilder(context.applicationContext, DriftDatabase::class.java, fileName)
+                .addMigrations(*MIGRATIONS)
                 .build()
     }
 }

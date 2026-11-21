@@ -35,6 +35,8 @@ class CaptureProcessor(
     private val alerts: BudgetAlertChecker,
     private val settings: SettingsStore,
     private val zone: ZoneId = ZoneId.systemDefault(),
+    /** Called after a captured text was stored as a new row (parsed or not); never for a duplicate. */
+    private val onCaptured: () -> Unit = {},
 ) {
     private val dedupe = DuplicateDetector()
 
@@ -62,6 +64,7 @@ class CaptureProcessor(
                 is Outcome.Failed -> null to "$RESULT_FAILED: ${outcome.reason}"
             }
             markResult(rawId, result, txId)
+            if (outcome is Outcome.Inserted) runCatching { onCaptured() }
             outcome
         } catch (e: Exception) {
             Log.e(TAG, "capture failed", e)

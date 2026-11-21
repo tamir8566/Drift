@@ -8,9 +8,15 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+    <!--
+        "Data stays on the device": the system's cloud backup and device-to-device transfer are
+        off (allowBackup=false; the extraction rules exclude everything for Android 12+).
+        Backups are made only by the user, from settings → "גיבוי".
+    -->
     <application
         android:name=".DriftApp"
-        android:allowBackup="true"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
         android:label="@string/app_name"

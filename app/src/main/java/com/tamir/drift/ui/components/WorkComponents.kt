@@ -1,6 +1,6 @@
 package com.tamir.drift.ui.components
 
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -25,7 +25,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -47,9 +46,23 @@ import com.tamir.drift.ui.theme.DriftType
 import java.time.LocalDate
 import java.time.YearMonth
 
-/** Small status pill: 11sp bold text on a 12% tint with a 45% border of the same color. */
+/**
+ * Small status pill: 11sp bold text on a 12% tint with a 45% border of the same color. When its
+ * text changes ("לא בכיוון" → "בכיוון") the old pill cross-fades into the new one.
+ */
 @Composable
 fun StatusPill(text: String, color: Color, modifier: Modifier = Modifier) {
+    if (!LocalFeedback.current.animations) {
+        StatusPillBody(text, color, modifier)
+        return
+    }
+    Crossfade(targetState = text to color, modifier = modifier, animationSpec = tween(Motion.PILL_MS), label = "statusPill") { shown ->
+        StatusPillBody(shown.first, shown.second)
+    }
+}
+
+@Composable
+private fun StatusPillBody(text: String, color: Color, modifier: Modifier = Modifier) {
     val shape = RoundedCornerShape(99.dp)
     Box(
         modifier
@@ -85,7 +98,8 @@ fun StepButton(icon: ImageVector, contentDescription: String, onClick: () -> Uni
 
 /**
  * Editable target row: label at the start, "− value +" at the end. Tapping the value opens the
- * caller's amount dialog ([onEdit]); the buttons step by a fixed amount.
+ * caller's amount dialog ([onEdit]); the buttons step by a fixed amount, each step with a light
+ * tick. [valueDim] draws the value dimmed (a "—" while the real value is still loading).
  */
 @Composable
 fun StepperRow(
@@ -96,15 +110,17 @@ fun StepperRow(
     onEdit: () -> Unit,
     modifier: Modifier = Modifier,
     canDecrease: Boolean = true,
+    valueDim: Boolean = false,
 ) {
+    val feedback = rememberFeedbackActions()
     Row(modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(label, style = DriftType.RowTitle, color = DriftColors.Text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-        StepButton(DriftIcons.Minus, stringResource(R.string.goal_step_decrease), onDecrease, enabled = canDecrease)
+        StepButton(DriftIcons.Minus, stringResource(R.string.goal_step_decrease), { feedback.tick(); onDecrease() }, enabled = canDecrease)
         Text(
-            valueText, style = DriftType.Value20, color = DriftColors.Text, maxLines = 1, textAlign = TextAlign.Center,
+            valueText, style = DriftType.Value20, color = if (valueDim) DriftColors.TextDim else DriftColors.Text, maxLines = 1, textAlign = TextAlign.Center,
             modifier = Modifier.width(96.dp).clip(RoundedCornerShape(8.dp)).clickable(onClick = onEdit).padding(vertical = 2.dp),
         )
-        StepButton(DriftIcons.Plus, stringResource(R.string.goal_step_increase), onIncrease)
+        StepButton(DriftIcons.Plus, stringResource(R.string.goal_step_increase), { feedback.tick(); onIncrease() })
     }
 }
 
@@ -248,6 +264,7 @@ fun LegendDot(label: String, color: Color, ring: Boolean = false) {
  * 6-month saved-vs-goal bars: lime when the month met the goal, orange otherwise, with a hairline
  * at the goal level. The label above each bar is the same value the bar is drawn from; a month
  * with nothing saved — or a negative one — has no bar and its label says so ("0" / "−350").
+ * The columns grow from zero the first time they appear, one shortly after the other.
  */
 @Composable
 fun SavingHistoryBars(items: List<MonthSavingHistory>, currentMonth: YearMonth, modifier: Modifier = Modifier) {
@@ -268,12 +285,12 @@ fun SavingHistoryBars(items: List<MonthSavingHistory>, currentMonth: YearMonth, 
                 )
             }
             Row(Modifier.fillMaxWidth().fillMaxHeight(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Bottom) {
-                items.forEach { m ->
+                items.forEachIndexed { index, m ->
                     // Keyed by month: each bar animates from its own previous height, also when
                     // the list shifts by a month.
                     key(m.month) {
                         val target = BarValue(m.savedAgorot.toDouble(), max).fraction
-                        val animated by animateFloatAsState(target, tween(BAR_ANIM_MS), label = "savingBar")
+                        val animated = animatedBarFraction(target, delayMillis = index * Motion.COLUMN_STAGGER_MS)
                         val color = if (m.met) DriftColors.Lime else DriftColors.Orange
                         val isCurrent = m.month == currentMonth
                         Column(Modifier.weight(1f).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Bottom) {

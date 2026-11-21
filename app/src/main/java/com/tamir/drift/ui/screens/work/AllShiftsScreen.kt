@@ -26,9 +26,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tamir.drift.R
 import com.tamir.drift.data.db.ShiftEntity
 import com.tamir.drift.data.db.totalAgorot
+import com.tamir.drift.data.settings.SettingsStore
 import com.tamir.drift.ui.LocalAppGraph
 import com.tamir.drift.ui.components.EmptyNote
 import com.tamir.drift.ui.components.ScreenHeader
+import com.tamir.drift.ui.components.isNewSince
+import com.tamir.drift.ui.components.rememberListSeenBefore
+import com.tamir.drift.ui.components.rowMotion
 import com.tamir.drift.ui.format.Fmt
 import com.tamir.drift.ui.theme.DriftColors
 import com.tamir.drift.ui.theme.DriftType
@@ -53,6 +57,8 @@ fun AllShiftsScreen(onBack: () -> Unit, onEditShift: (Long) -> Unit) {
         loaded.orEmpty().groupBy { YearMonth.from(LocalDate.ofEpochDay(it.date)) }.toList()
     }
     val thisYear = LocalDate.now().year
+    // Shifts that were added since this list was last looked at land with a short tint.
+    val seenBefore = rememberListSeenBefore(SettingsStore.LIST_ALL_SHIFTS)
 
     LazyColumn(
         Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(),
@@ -82,7 +88,7 @@ fun AllShiftsScreen(onBack: () -> Unit, onEditShift: (Long) -> Unit) {
                 }
             }
             items(list, key = { it.id }) { shift ->
-                ShiftRow(shift, jobsById[shift.jobId], onClick = { onEditShift(shift.id) })
+                ShiftRow(shift, jobsById[shift.jobId], onClick = { onEditShift(shift.id) }, modifier = rowMotion(isNewSince(shift.createdAt, seenBefore)))
             }
         }
         item { Spacer(Modifier.height(8.dp)) }

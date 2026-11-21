@@ -48,9 +48,12 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tamir.drift.BuildConfig
 import com.tamir.drift.R
+import com.tamir.drift.backup.BackupManager
+import com.tamir.drift.backup.BackupScheduler
 import com.tamir.drift.capture.CaptureStatus
 import com.tamir.drift.data.db.Origin
 import com.tamir.drift.data.settings.Settings
+import com.tamir.drift.domain.backup.BackupFiles
 import com.tamir.drift.domain.money.AmountInput
 import com.tamir.drift.domain.money.Currencies
 import com.tamir.drift.domain.work.ShiftCalculator
@@ -79,7 +82,16 @@ import kotlinx.coroutines.launch
 import java.time.DayOfWeek
 import java.time.LocalDate
 
-/** PRD "הגדרות". */
+/**
+ * PRD "הגדרות".
+ *
+ * "גיבוי": "גיבוי עכשיו" writes one zip (database + settings) to a document the user creates;
+ * "שחזור מגיבוי" reads a document the user opens, checks it, and only after a confirmation that
+ * names the backup's date replaces the data and restarts the app; "גיבוי אוטומטי שבועי" writes a
+ * dated file once a week into a folder picked once. No storage permission is involved, and the
+ * group says plainly that the file is not encrypted.
+ * "משוב": the three switches of the feedback package — animations, haptics, sounds.
+ */
 @Composable
 fun SettingsScreen(onBack: () -> Unit, onOpenCalibration: () -> Unit, onOpenDebug: () -> Unit, onOpenAll: () -> Unit, onOpenBudget: () -> Unit) {
     val graph = LocalAppGraph.current
@@ -116,6 +128,62 @@ fun SettingsScreen(onBack: () -> Unit, onOpenCalibration: () -> Unit, onOpenDebu
     var editFx by remember { mutableStateOf<String?>(null) }
     var updateStatus by remember { mutableStateOf<String?>(null) }
 
+    // Backup and restore. The picked documents and the folder come from the system file picker,
+    // so no storage permission is needed.
+    var backupBusy by remember { mutableStateOf(false) }
+    var restoreBusy by remember { mutableStateOf(false) }
+    var restoring by remember { mutableStateOf(false) }
+    var restoreReady by remember { mutableStateOf<BackupManager.RestoreCheck.Ready?>(null) }
+    var restoreError by remember { mutableStateOf<String?>(null) }
+    val createBackup = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(BackupManager.ZIP_MIME)) { uri ->
+        if (uri != null) {
+            backupBusy = true
+            // On the app scope: the file is written to its end even if this screen is left.
+            graph.scope.launch {
+                val ok = graph.backup.backupTo(uri)
+                backupBusy = false
+                graph.showMessage(context.getString(if (ok) R.string.backup_done else R.string.backup_failed))
+            }
+        }
+    }
+    val openBackup = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            restoreBusy = true
+            scope.launch {
+                // Step 1: read and check the file. The current data is not touched here.
+                val check: BackupManager.RestoreCheck = try {
+                    graph.backup.prepareRestore(uri)
+                } finally {
+                    restoreBusy = false
+                }
+                when (check) {
+                    is BackupManager.RestoreCheck.Ready -> {
+                        restoreReady = check
+                    }
+                    BackupManager.RestoreCheck.Unreadable -> {
+                        restoreError = context.getString(R.string.restore_unreadable)
+                    }
+                    BackupManager.RestoreCheck.NewerVersion -> {
+                        restoreError = context.getString(R.string.restore_newer)
+                    }
+                }
+            }
+        }
+    }
+    val pickFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) {
+            graph.scope.launch {
+                if (graph.backup.useFolder(uri)) {
+                    graph.settings.setBackupAutoEnabled(true)
+                    // A new period starts now: its first run writes the first backup into the folder.
+                    BackupScheduler.schedule(context, restart = true)
+                } else {
+                    graph.showMessage(context.getString(R.string.backup_folder_failed))
+                }
+            }
+        }
+    }
+
     LazyColumn(
         Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(),
         contentPadding = PaddingValues(start = 22.dp, end = 22.dp, top = 12.dp, bottom = 16.dp),
@@ -146,6 +214,102 @@ fun SettingsScreen(onBack: () -> Unit, onOpenCalibration: () -> Unit, onOpenDebu
                         PermissionRow(stringResource(R.string.settings_install_permission), stringResource(R.string.settings_install_permission_desc), installGranted) {
                             context.startActivitySafely(graph.updateChecker.unknownSourcesIntent())
                         }
+                    }
+                }
+            }
+        }
+
+        // Backup: manual, restore, and the weekly automatic one.
+        item {
+            Column {
+                SectionHeader(stringResource(R.string.settings_backup))
+                GlassCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
+                        val current = settings
+                        val lastBackup = current?.lastBackupMillis ?: 0L
+                        val lastText = when {
+                            backupBusy -> stringResource(R.string.backup_working)
+                            lastBackup > 0L -> stringResource(R.string.backup_last, Fmt.fullDate(lastBackup))
+                            else -> stringResource(R.string.backup_never)
+                        }
+                        NavRow(stringResource(R.string.backup_now), lastText) {
+                            if (!backupBusy) createBackup.launch(BackupFiles.fileName(LocalDate.now()))
+                        }
+                        HairlineDivider()
+                        NavRow(
+                            stringResource(R.string.backup_restore),
+                            stringResource(if (restoreBusy) R.string.restore_checking else R.string.backup_restore_desc),
+                        ) {
+                            if (!restoreBusy && !restoring) openBackup.launch(BackupManager.RESTORE_MIME_TYPES)
+                        }
+                        HairlineDivider()
+                        val autoOn = current?.backupAutoEnabled ?: false
+                        val hasFolder = current?.backupTreeUri?.isNotBlank() ?: false
+                        SwitchRow(
+                            stringResource(R.string.backup_auto), autoOn,
+                            { on ->
+                                when {
+                                    !on -> {
+                                        scope.launch { graph.settings.setBackupAutoEnabled(false) }
+                                        BackupScheduler.cancel(context)
+                                    }
+                                    // The folder is picked once; switching on again reuses it.
+                                    hasFolder -> scope.launch {
+                                        graph.settings.setBackupAutoEnabled(true)
+                                        BackupScheduler.schedule(context, restart = true)
+                                    }
+                                    else -> pickFolder.launch(null)
+                                }
+                            },
+                            subtitle = stringResource(R.string.backup_auto_desc),
+                        )
+                        if (autoOn) {
+                            HairlineDivider()
+                            val folderName = current?.backupTreeName.orEmpty()
+                            NavRow(stringResource(R.string.backup_folder), folderName.ifBlank { stringResource(R.string.backup_folder_unnamed) }) {
+                                pickFolder.launch(null)
+                            }
+                        }
+                        if (autoOn && (current?.backupAutoFailedMillis ?: 0L) > 0L) {
+                            Text(
+                                stringResource(R.string.backup_auto_failed),
+                                style = DriftType.Label11, color = DriftColors.Orange,
+                                modifier = Modifier.padding(bottom = 8.dp),
+                            )
+                        }
+                        Text(
+                            stringResource(R.string.backup_not_encrypted),
+                            style = DriftType.Label11, color = DriftColors.TextSecondary,
+                            modifier = Modifier.padding(bottom = 10.dp),
+                        )
+                    }
+                }
+            }
+        }
+
+        // Feedback: motion, haptics and sound — each can be switched off.
+        item {
+            Column {
+                SectionHeader(stringResource(R.string.settings_feedback))
+                GlassCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
+                        SwitchRow(
+                            stringResource(R.string.feedback_animations), settings?.feedbackAnimations ?: true,
+                            { v -> scope.launch { graph.settings.setFeedbackAnimations(v) } },
+                            subtitle = stringResource(R.string.feedback_animations_desc),
+                        )
+                        HairlineDivider()
+                        SwitchRow(
+                            stringResource(R.string.feedback_haptics), settings?.feedbackHaptics ?: true,
+                            { v -> scope.launch { graph.settings.setFeedbackHaptics(v) } },
+                            subtitle = stringResource(R.string.feedback_haptics_desc),
+                        )
+                        HairlineDivider()
+                        SwitchRow(
+                            stringResource(R.string.feedback_sound), settings?.feedbackSound ?: true,
+                            { v -> scope.launch { graph.settings.setFeedbackSound(v) } },
+                            subtitle = stringResource(R.string.feedback_sound_desc),
+                        )
                     }
                 }
             }
@@ -349,6 +513,57 @@ fun SettingsScreen(onBack: () -> Unit, onOpenCalibration: () -> Unit, onOpenDebu
         TrackingStartDialog(LocalDate.ofEpochDay(s.trackingStartEpochDay), onDismiss = { editTrackingStart = false }) { date ->
             scope.launch { graph.settings.setTrackingStart(date.toEpochDay()) }
             editTrackingStart = false
+        }
+    }
+
+    // Restore, step 2: the backup was read and checked; nothing is replaced before this confirmation.
+    val ready = restoreReady
+    if (ready != null) {
+        DriftDialog(
+            title = stringResource(R.string.backup_restore),
+            onDismiss = {
+                if (!restoring) {
+                    restoreReady = null
+                    graph.scope.launch { graph.backup.discardPreparedRestore() }
+                }
+            },
+            confirmText = stringResource(R.string.restore_confirm_action),
+            onConfirm = {
+                if (!restoring) {
+                    restoring = true
+                    // On success the app process is restarted from inside restore(); it returns only on failure.
+                    graph.scope.launch {
+                        val ok = graph.backup.restore(ready)
+                        if (!ok) {
+                            restoring = false
+                            restoreReady = null
+                            restoreError = context.getString(R.string.restore_failed)
+                        }
+                    }
+                }
+            },
+            dismissText = stringResource(R.string.cancel),
+            confirmEnabled = !restoring,
+        ) {
+            Text(
+                stringResource(R.string.restore_confirm_text, Fmt.fullDate(ready.meta.createdAt), Fmt.time(ready.meta.createdAt)),
+                style = DriftType.Body, color = DriftColors.Text,
+            )
+            Text(
+                stringResource(if (restoring) R.string.restore_working else R.string.restore_confirm_note),
+                style = DriftType.Label12, color = DriftColors.TextSecondary,
+            )
+        }
+    }
+    val restoreProblem = restoreError
+    if (restoreProblem != null) {
+        DriftDialog(
+            title = stringResource(R.string.backup_restore),
+            onDismiss = { restoreError = null },
+            confirmText = stringResource(R.string.ok),
+            onConfirm = { restoreError = null },
+        ) {
+            Text(restoreProblem, style = DriftType.Body, color = DriftColors.TextSecondary)
         }
     }
 }

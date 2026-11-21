@@ -1,7 +1,5 @@
 package com.tamir.drift.ui.screens.where
 
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -36,14 +34,15 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tamir.drift.R
 import com.tamir.drift.domain.format.BarValue
 import com.tamir.drift.ui.LocalAppGraph
-import com.tamir.drift.ui.components.BAR_ANIM_MS
 import com.tamir.drift.ui.components.Chip
 import com.tamir.drift.ui.components.EmptyNote
 import com.tamir.drift.ui.components.GlassCard
 import com.tamir.drift.ui.components.HairlineDivider
+import com.tamir.drift.ui.components.Motion
 import com.tamir.drift.ui.components.ScreenHeader
 import com.tamir.drift.ui.components.SectionHeader
 import com.tamir.drift.ui.components.SegmentedBar
+import com.tamir.drift.ui.components.animatedBarFraction
 import com.tamir.drift.ui.components.composeColor
 import com.tamir.drift.ui.driftViewModel
 import com.tamir.drift.ui.format.Fmt
@@ -128,14 +127,15 @@ fun WhereScreen(
                     Column(Modifier.padding(16.dp)) {
                         val max = state.months.maxOfOrNull { it.total }?.takeIf { it > 0 } ?: 1.0
                         Row(Modifier.fillMaxWidth().height(120.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Bottom) {
-                            state.months.forEach { m ->
+                            state.months.forEachIndexed { index, m ->
                                 // Keyed by month, so a bar animates from its own previous height.
                                 key(m.yearMonth) {
                                     val isCurrent = m.yearMonth == state.currentMonth
                                     // The bar is drawn from the same total its label prints; a month
                                     // without spend (or with more refunds than purchases) has no bar.
                                     val target = BarValue(m.total, max).fraction
-                                    val animated by animateFloatAsState(target, tween(BAR_ANIM_MS), label = "monthBar")
+                                    // The six columns grow from zero the first time, one shortly after the other.
+                                    val animated = animatedBarFraction(target, delayMillis = index * Motion.COLUMN_STAGGER_MS)
                                     Column(Modifier.weight(1f).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Bottom) {
                                         Text(Fmt.signedMoney(m.total), style = DriftType.Tag10, color = DriftColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                         Spacer(Modifier.height(4.dp))

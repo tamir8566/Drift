@@ -1,6 +1,7 @@
 package com.tamir.drift.di
 
 import android.content.Context
+import com.tamir.drift.backup.BackupManager
 import com.tamir.drift.capture.CaptureProcessor
 import com.tamir.drift.data.db.DriftDatabase
 import com.tamir.drift.data.repo.BudgetRepository
@@ -10,6 +11,8 @@ import com.tamir.drift.data.repo.SavingsRepository
 import com.tamir.drift.data.repo.TransactionRepository
 import com.tamir.drift.data.repo.WorkRepository
 import com.tamir.drift.data.settings.SettingsStore
+import com.tamir.drift.feedback.DriftSound
+import com.tamir.drift.feedback.SoundPlayer
 import com.tamir.drift.notify.BudgetAlertChecker
 import com.tamir.drift.notify.Notifier
 import com.tamir.drift.update.UpdateChecker
@@ -49,8 +52,23 @@ class AppGraph private constructor(val appContext: Context) {
     val monthSummary: MonthSummaryUseCase by lazy { MonthSummaryUseCase() }
     val notifier: Notifier by lazy { Notifier(appContext) }
     val alertChecker: BudgetAlertChecker by lazy { BudgetAlertChecker(appContext, db, settings, notifier, monthSummary) }
-    val captureProcessor: CaptureProcessor by lazy { CaptureProcessor(db, categories, alertChecker, settings) }
+    val captureProcessor: CaptureProcessor by lazy {
+        CaptureProcessor(
+            db, categories, alertChecker, settings,
+            // The "captured" sound belongs to the open app only — never to a capture in the background.
+            onCaptured = { if (appInForeground) sounds.play(DriftSound.CAPTURED) },
+        )
+    }
     val updateChecker: UpdateChecker by lazy { UpdateChecker(appContext, settings) }
+
+    /** Backup and restore of the database and the settings (manual, and the weekly automatic one). */
+    val backup: BackupManager by lazy { BackupManager(appContext, { db }, settings) }
+
+    /** The three feedback sounds; silent unless the "צלילים" switch is on and the ringer is in normal mode. */
+    val sounds: SoundPlayer by lazy { SoundPlayer(appContext, settings, scope) }
+
+    /** True while the main screen is started (visible); the activity sets it in onStart / onStop. */
+    @Volatile var appInForeground: Boolean = false
 
     /**
      * Short one-line messages for the user ("עודכנו 3 הוצאות של …"); the root of the UI shows each

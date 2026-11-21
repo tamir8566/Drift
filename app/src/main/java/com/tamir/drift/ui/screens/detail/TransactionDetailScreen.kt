@@ -48,6 +48,7 @@ import com.tamir.drift.ui.components.ScreenHeader
 import com.tamir.drift.ui.components.ShareSection
 import com.tamir.drift.ui.components.UnsavedChangesDialog
 import com.tamir.drift.ui.components.parseDate
+import com.tamir.drift.ui.components.rememberFeedbackActions
 import com.tamir.drift.ui.components.sourceName
 import com.tamir.drift.ui.components.toFieldText
 import com.tamir.drift.ui.deleteTransactionWithUndo
@@ -76,6 +77,7 @@ import java.time.ZoneId
 @Composable
 fun TransactionDetailScreen(id: Long, onBack: () -> Unit, onOpenCalibration: (Long) -> Unit) {
     val graph = LocalAppGraph.current
+    val feedback = rememberFeedbackActions()
     val txFlow = remember(id) { graph.transactions.observe(id) }
     val tx by txFlow.collectAsStateWithLifecycle(initialValue = null)
     val categories by graph.categories.categories.collectAsStateWithLifecycle(initialValue = emptyList())
@@ -92,10 +94,12 @@ fun TransactionDetailScreen(id: Long, onBack: () -> Unit, onOpenCalibration: (Lo
         current, categories.map { it.id to it.name }, onBack = onBack,
         onDelete = {
             // Deleted at once; the root message offers "ביטול", which writes the same row back.
+            feedback.deleted()
             graph.deleteTransactionWithUndo(current)
             onBack()
         },
         onSave = { updated, categoryChanged ->
+            feedback.saved()
             // On the app scope: the write finishes although the screen closes right away.
             graph.scope.launch {
                 if (categoryChanged) {

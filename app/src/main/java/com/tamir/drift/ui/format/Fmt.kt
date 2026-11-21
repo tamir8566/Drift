@@ -98,6 +98,10 @@ object Fmt {
 
     fun fullDate(date: LocalDate): String = "${date.dayOfMonth}.${date.monthValue}.${date.year}"
 
+    /** "21.11.2026" for a moment in time. */
+    fun fullDate(epochMillis: Long, zone: ZoneId = ZoneId.systemDefault()): String =
+        fullDate(Instant.ofEpochMilli(epochMillis).atZone(zone).toLocalDate())
+
     fun time(epochMillis: Long, zone: ZoneId = ZoneId.systemDefault()): String {
         val t = Instant.ofEpochMilli(epochMillis).atZone(zone).toLocalTime()
         return String.format(Locale.US, "%02d:%02d", t.hour, t.minute)

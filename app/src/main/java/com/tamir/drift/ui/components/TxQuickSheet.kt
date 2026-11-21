@@ -5,10 +5,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -24,7 +22,6 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -55,11 +52,20 @@ private const val SHARE_NONE = "none"
  * The long-press sheet of an expense row: one tap recategorises (teaching the merchant rule, with
  * the "עודכנו N הוצאות" line), sets "עם חברים" to a half / third / quarter or off, changes the
  * kind, or deletes (with undo). A glass card anchored to the bottom over a scrim — a tap outside
- * or the back button closes it; every action closes it too.
+ * or the back button closes it; every action closes it too. It appears with a short fade and
+ * rise ([ScrimOverlay]); [txId] stays set while it fades out, [visible] says whether it is open.
  */
 @Composable
-fun TxQuickSheet(txId: Long, onDismiss: () -> Unit) {
+fun TxQuickSheet(txId: Long?, visible: Boolean, onDismiss: () -> Unit) {
+    ScrimOverlay(visible = visible && txId != null, onDismiss = onDismiss) {
+        if (txId != null) TxQuickSheetCard(txId, onDismiss)
+    }
+}
+
+@Composable
+private fun TxQuickSheetCard(txId: Long, onDismiss: () -> Unit) {
     val graph = LocalAppGraph.current
+    val feedback = rememberFeedbackActions()
     val txFlow = remember(txId) { graph.transactions.observe(txId) }
     val observed by txFlow.collectAsStateWithLifecycle(initialValue = null)
     val categories by graph.categories.categories.collectAsStateWithLifecycle(initialValue = emptyList())
@@ -73,14 +79,8 @@ fun TxQuickSheet(txId: Long, onDismiss: () -> Unit) {
         onDismiss()
     }
 
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.55f))
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onDismiss),
-        contentAlignment = Alignment.BottomCenter,
-    ) {
-        val tx: TransactionEntity = observed ?: return@Box
+    run {
+        val tx: TransactionEntity = observed ?: return@run
         val sheetShape = RoundedCornerShape(22.dp)
         GlassCard(
             Modifier
@@ -169,6 +169,7 @@ fun TxQuickSheet(txId: Long, onDismiss: () -> Unit) {
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(10.dp))
                         .clickable {
+                            feedback.deleted()
                             graph.deleteTransactionWithUndo(tx)
                             onDismiss()
                         }

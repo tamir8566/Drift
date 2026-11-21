@@ -34,6 +34,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tamir.drift.R
+import com.tamir.drift.data.settings.SettingsStore
 import com.tamir.drift.ui.LocalAppGraph
 import com.tamir.drift.ui.components.Chip
 import com.tamir.drift.ui.components.ChoiceRow
@@ -45,6 +46,9 @@ import com.tamir.drift.ui.components.GlassIconButton
 import com.tamir.drift.ui.components.ScreenHeader
 import com.tamir.drift.ui.components.SectionHeader
 import com.tamir.drift.ui.components.TxRow
+import com.tamir.drift.ui.components.isNewSince
+import com.tamir.drift.ui.components.rememberListSeenBefore
+import com.tamir.drift.ui.components.rowMotion
 import com.tamir.drift.ui.driftViewModel
 import com.tamir.drift.ui.format.Fmt
 import com.tamir.drift.ui.theme.DriftColors
@@ -100,6 +104,8 @@ fun AllTransactionsScreen(
     val thisYear = YearMonth.now().year
     val filterCategory = state.filter.category
     val filterMonth = state.filter.month
+    // Expenses that arrived since this list was last looked at land with a short tint.
+    val seenBefore = rememberListSeenBefore(SettingsStore.LIST_ALL_TRANSACTIONS)
 
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()) {
         // Pinned: header, search, the one filter row and the summary of what is listed.
@@ -190,7 +196,9 @@ fun AllTransactionsScreen(
 
             if (state.unparsed.isNotEmpty()) {
                 item(key = "unparsed-header") { SectionHeader(stringResource(R.string.tx_unparsed_section)) }
-                items(state.unparsed, key = { "u${it.id}" }) { tx -> TxRow(tx, state.categories, onClick = { onOpenTransaction(tx.id) }) }
+                items(state.unparsed, key = { "u${it.id}" }) { tx ->
+                    TxRow(tx, state.categories, onClick = { onOpenTransaction(tx.id) }, modifier = rowMotion(isNewSince(tx.createdAt, seenBefore)))
+                }
             }
 
             if (state.unparsed.isEmpty() && state.groups.isEmpty()) {
@@ -204,7 +212,9 @@ fun AllTransactionsScreen(
                         Text(stringResource(R.string.amount_with_shekel, Fmt.signedMoneyAgorot(group.total)), style = DriftType.Label12, color = DriftColors.TextSecondary)
                     }
                 }
-                items(group.items, key = { it.id }) { tx -> TxRow(tx, state.categories, onClick = { onOpenTransaction(tx.id) }, showDate = false) }
+                items(group.items, key = { it.id }) { tx ->
+                    TxRow(tx, state.categories, onClick = { onOpenTransaction(tx.id) }, modifier = rowMotion(isNewSince(tx.createdAt, seenBefore)), showDate = false)
+                }
             }
             item(key = "end") { Spacer(Modifier.height(8.dp)) }
         }

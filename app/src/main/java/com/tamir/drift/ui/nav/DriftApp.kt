@@ -1,6 +1,9 @@
 package com.tamir.drift.ui.nav
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -36,6 +39,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -59,8 +63,12 @@ import com.tamir.drift.ui.components.DriftBackdrop
 import com.tamir.drift.ui.components.DriftBottomBar
 import com.tamir.drift.ui.components.DriftIcons
 import com.tamir.drift.ui.components.GlassCard
+import com.tamir.drift.ui.components.LocalFeedback
 import com.tamir.drift.ui.components.LocalTxQuickSheet
+import com.tamir.drift.ui.components.Motion
+import com.tamir.drift.ui.components.ScrimOverlay
 import com.tamir.drift.ui.components.TxQuickSheet
+import com.tamir.drift.ui.components.rememberFeedbackActions
 import com.tamir.drift.ui.format.Fmt
 import com.tamir.drift.ui.screens.add.ManualAddScreen
 import com.tamir.drift.ui.screens.budget.BudgetScreen
@@ -87,6 +95,10 @@ import java.time.YearMonth
 /** "No date given" for the shift route's date argument. */
 private const val NO_DATE = Long.MIN_VALUE
 
+/** Where a pushed screen moves to as it comes in, and where it leaves to on the way back. */
+private val PUSH_TOWARDS = AnimatedContentTransitionScope.SlideDirection.Start
+private val PUSH_BACK_TOWARDS = AnimatedContentTransitionScope.SlideDirection.End
+
 private val topLevel = mapOf(
     Routes.HOME to BottomTab.HOME,
     Routes.WHERE to BottomTab.WHERE,
@@ -107,9 +119,17 @@ fun DriftApp(deepLink: String? = null, onDeepLinkConsumed: () -> Unit = {}) {
     val activeTab = topLevel[baseRoute]
     var showAddMenu by remember { mutableStateOf(false) }
     val graph = LocalAppGraph.current
-    // The expense whose long-press sheet is open (drawn here, above the bottom bar too).
+    val feedback = rememberFeedbackActions()
+    // The expense whose long-press sheet is open (drawn here, above the bottom bar too). The id
+    // stays set while the sheet fades out; "open" is what shows and hides it.
     val quickSheetTx = remember { mutableStateOf<Long?>(null) }
-    val openQuickSheet: (Long) -> Unit = remember { { id: Long -> quickSheetTx.value = id } }
+    val quickSheetOpen = remember { mutableStateOf(false) }
+    val openQuickSheet: (Long) -> Unit = remember {
+        { id: Long ->
+            quickSheetTx.value = id
+            quickSheetOpen.value = true
+        }
+    }
     // The "כמו בפעם הקודמת" row of the plus menu is built from the stored jobs and shifts.
     val jobs by graph.work.jobs.collectAsStateWithLifecycle(initialValue = emptyList())
     val shifts by graph.work.shifts.collectAsStateWithLifecycle(initialValue = emptyList())
@@ -141,15 +161,20 @@ fun DriftApp(deepLink: String? = null, onDeepLinkConsumed: () -> Unit = {}) {
                     onTab = { tab -> if (tab == activeTab) nav.resetTab(tab) else nav.navigateTopLevel(tab) },
                     onAdd = { showAddMenu = true },
                     modifier = Modifier.navigationBarsPadding(),
+                    menuOpen = showAddMenu,
                 )
             }
         }
-        if (showAddMenu && activeTab != null) {
-            // Today's shift like the last one: hidden without an earlier shift to copy, and once
-            // today already has a shift of that job.
-            val quickShift: QuickShiftPlan? = remember(jobs, shifts) {
-                QuickShift.plan(LocalDate.now(), jobs.toJobSummaries(), shifts.toShiftSummaries())
-            }
+        // Today's shift like the last one: hidden without an earlier shift to copy, and once
+        // today already has a shift of that job. Worked out while the menu is open; while it
+        // fades out the last plan stays, so the row does not vanish under the user's finger.
+        val lastPlan = remember { arrayOfNulls<QuickShiftPlan>(1) }
+        val quickShift: QuickShiftPlan? = remember(jobs, shifts, showAddMenu) {
+            if (showAddMenu) lastPlan[0] = QuickShift.plan(LocalDate.now(), jobs.toJobSummaries(), shifts.toShiftSummaries())
+            lastPlan[0]
+        }
+        // The menu fades in over a light scrim and rises a little; the plus turns into a close mark.
+        ScrimOverlay(visible = showAddMenu && activeTab != null, onDismiss = { showAddMenu = false }) {
             AddMenu(
                 onDismiss = { showAddMenu = false },
                 onExpense = { showAddMenu = false; nav.navigate(Routes.ADD) },
@@ -157,6 +182,7 @@ fun DriftApp(deepLink: String? = null, onDeepLinkConsumed: () -> Unit = {}) {
                 quickShift = quickShift,
                 onQuickShift = { plan ->
                     showAddMenu = false
+                    feedback.saved()
                     // Saved at once; the root message confirms the day total and offers the undo.
                     graph.scope.launch {
                         val id = graph.work.addShift(
@@ -175,10 +201,7 @@ fun DriftApp(deepLink: String? = null, onDeepLinkConsumed: () -> Unit = {}) {
                 },
             )
         }
-        val quickId = quickSheetTx.value
-        if (quickId != null) {
-            TxQuickSheet(quickId, onDismiss = { quickSheetTx.value = null })
-        }
+        TxQuickSheet(quickSheetTx.value, visible = quickSheetOpen.value, onDismiss = { quickSheetOpen.value = false })
         MessageHost(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(start = 22.dp, end = 22.dp, bottom = 96.dp))
     }
 }
@@ -231,7 +254,8 @@ private fun MessageHost(modifier: Modifier = Modifier) {
 
 /**
  * PRD: the plus opens a small menu — "הוצאה" / "משמרת". A glass sheet anchored above the
- * bottom bar over a light scrim; tapping outside — or the back button — closes it.
+ * bottom bar over a light scrim ([ScrimOverlay] draws the scrim and the short fade-and-rise);
+ * tapping outside — or the back button — closes it.
  * With [quickShift] a first row "כמו בפעם הקודמת" saves today's shift in one tap: the job, its
  * hours (or start–end, or "יום") and the day total it will be saved with.
  */
@@ -247,40 +271,32 @@ private fun AddMenu(
     // here — composed after the navigation host, whenever the menu opens — so it is the newest
     // back callback and wins over the host's own.
     BackHandler(onBack = onDismiss)
-    Box(
+    GlassCard(
         Modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.55f))
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onDismiss),
-        contentAlignment = Alignment.BottomCenter,
+            .navigationBarsPadding()
+            .padding(start = 22.dp, end = 22.dp, bottom = 96.dp)
+            .fillMaxWidth()
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = {}),
+        radius = 22.dp,
     ) {
-        GlassCard(
-            Modifier
-                .navigationBarsPadding()
-                .padding(start = 22.dp, end = 22.dp, bottom = 96.dp)
-                .fillMaxWidth()
-                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = {}),
-            radius = 22.dp,
-        ) {
-            Column(Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
-                if (quickShift != null) {
-                    val start = quickShift.startMinute
-                    val end = quickShift.endMinute
-                    val what = when {
-                        quickShift.job.isDaily -> stringResource(R.string.work_shift_day)
-                        start != null && end != null -> "${ShiftCalculator.formatClock(start)}–${ShiftCalculator.formatClock(end)}"
-                        else -> stringResource(R.string.work_hours_value, ShiftCalculator.formatHours(quickShift.hours))
-                    }
-                    AddMenuRow(
-                        DriftIcons.Check, stringResource(R.string.add_menu_same_as_last), DriftColors.Lime,
-                        onClick = { onQuickShift(quickShift) },
-                        subtitle = "${quickShift.job.name} · $what",
-                        trailing = stringResource(R.string.amount_with_shekel, Fmt.moneyExact(quickShift.totalAgorot)),
-                    )
+        Column(Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
+            if (quickShift != null) {
+                val start = quickShift.startMinute
+                val end = quickShift.endMinute
+                val what = when {
+                    quickShift.job.isDaily -> stringResource(R.string.work_shift_day)
+                    start != null && end != null -> "${ShiftCalculator.formatClock(start)}–${ShiftCalculator.formatClock(end)}"
+                    else -> stringResource(R.string.work_hours_value, ShiftCalculator.formatHours(quickShift.hours))
                 }
-                AddMenuRow(DriftIcons.Plus, stringResource(R.string.add_menu_expense), DriftColors.Orange, onExpense)
-                AddMenuRow(DriftIcons.Work, stringResource(R.string.add_menu_shift), DriftColors.Lime, onShift)
+                AddMenuRow(
+                    DriftIcons.Check, stringResource(R.string.add_menu_same_as_last), DriftColors.Lime,
+                    onClick = { onQuickShift(quickShift) },
+                    subtitle = "${quickShift.job.name} · $what",
+                    trailing = stringResource(R.string.amount_with_shekel, Fmt.moneyExact(quickShift.totalAgorot)),
+                )
             }
+            AddMenuRow(DriftIcons.Plus, stringResource(R.string.add_menu_expense), DriftColors.Orange, onExpense)
+            AddMenuRow(DriftIcons.Work, stringResource(R.string.add_menu_shift), DriftColors.Lime, onShift)
         }
     }
 }
@@ -349,16 +365,54 @@ private fun NavHostController.resetTab(tab: BottomTab) {
     }
 }
 
+/** True for the four tab roots (they only fade); every other destination is a pushed screen. */
+private fun NavBackStackEntry.isTab(): Boolean {
+    val base: String = destination.route?.substringBefore('?') ?: return false
+    return topLevel.containsKey(base)
+}
+
+/**
+ * Transitions: a tab only fades ([Motion.TAB_FADE_MS]). A pushed screen (detail, add, settings,
+ * lists) slides in over the full width and fades in ([Motion.PUSH_MS]) while the screen under it
+ * fades out; going back it slides out the way it came. The slide follows the layout direction:
+ * [PUSH_TOWARDS] = Start is the platform's forward motion — in this right-to-left app the new
+ * screen comes in from the left and moves right, the way the header's back arrow points.
+ * With animations off (the settings switch, or the system animator scale at zero) screens snap.
+ */
 @Composable
 private fun DriftNavHost(nav: NavHostController) {
-    val fade = 180
+    val animations = LocalFeedback.current.animations
     NavHost(
         navController = nav,
         startDestination = Routes.HOME,
-        enterTransition = { fadeIn(tween(fade)) },
-        exitTransition = { fadeOut(tween(fade)) },
-        popEnterTransition = { fadeIn(tween(fade)) },
-        popExitTransition = { fadeOut(tween(fade)) },
+        enterTransition = {
+            when {
+                !animations -> EnterTransition.None
+                targetState.isTab() -> fadeIn(tween(Motion.TAB_FADE_MS))
+                else -> slideIntoContainer(PUSH_TOWARDS, tween(Motion.PUSH_MS)) + fadeIn(tween(Motion.PUSH_MS))
+            }
+        },
+        exitTransition = {
+            when {
+                !animations -> ExitTransition.None
+                targetState.isTab() -> fadeOut(tween(Motion.TAB_FADE_MS))
+                else -> fadeOut(tween(Motion.PUSH_MS))
+            }
+        },
+        popEnterTransition = {
+            when {
+                !animations -> EnterTransition.None
+                initialState.isTab() -> fadeIn(tween(Motion.TAB_FADE_MS))
+                else -> fadeIn(tween(Motion.PUSH_MS))
+            }
+        },
+        popExitTransition = {
+            when {
+                !animations -> ExitTransition.None
+                initialState.isTab() -> fadeOut(tween(Motion.TAB_FADE_MS))
+                else -> slideOutOfContainer(PUSH_BACK_TOWARDS, tween(Motion.PUSH_MS)) + fadeOut(tween(Motion.PUSH_MS))
+            }
+        },
     ) {
         composable(Routes.HOME) {
             HomeScreen(

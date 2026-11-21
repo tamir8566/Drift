@@ -1,5 +1,6 @@
 package com.tamir.drift.ui.screens.goal
 
+import android.os.SystemClock
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -16,7 +17,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -38,6 +41,7 @@ import com.tamir.drift.data.repo.Money
 import com.tamir.drift.domain.format.BarValue
 import com.tamir.drift.domain.money.AmountInput
 import com.tamir.drift.ui.LocalAppGraph
+import com.tamir.drift.ui.components.BAR_ANIM_MS
 import com.tamir.drift.ui.components.BudgetLine
 import com.tamir.drift.ui.components.CategoryBar
 import com.tamir.drift.ui.components.DateField
@@ -47,18 +51,23 @@ import com.tamir.drift.ui.components.EmptyNote
 import com.tamir.drift.ui.components.FocusOnOpen
 import com.tamir.drift.ui.components.GlassCard
 import com.tamir.drift.ui.components.HairlineDivider
+import com.tamir.drift.ui.components.HeroNumber
+import com.tamir.drift.ui.components.LocalFeedback
 import com.tamir.drift.ui.components.SavingHistoryBars
 import com.tamir.drift.ui.components.ScreenHeader
 import com.tamir.drift.ui.components.SectionHeader
 import com.tamir.drift.ui.components.StatusPill
 import com.tamir.drift.ui.components.StepperRow
 import com.tamir.drift.ui.components.parseDate
+import com.tamir.drift.ui.components.rememberFeedbackActions
 import com.tamir.drift.ui.components.toFieldText
+import com.tamir.drift.ui.components.wholeShekels
 import com.tamir.drift.ui.driftViewModel
 import com.tamir.drift.ui.format.Fmt
 import com.tamir.drift.ui.screens.budget.AmountDialog
 import com.tamir.drift.ui.theme.DriftColors
 import com.tamir.drift.ui.theme.DriftType
+import kotlinx.coroutines.delay
 import java.time.Instant
 import java.time.ZoneId
 import kotlin.math.abs
@@ -66,7 +75,14 @@ import kotlin.math.abs
 private const val MONTHLY_STEP = 100_00L
 private const val WEEKLY_STEP = 50_00L
 
-/** PRD "מסך יעד" — replaces the old savings tab and absorbs the long-term savings goals. */
+/**
+ * PRD "מסך יעד" — replaces the old savings tab and absorbs the long-term savings goals.
+ *
+ * Two quiet moments, each played once and remembered in the settings: when the month reaches its
+ * saving goal a single lime ring opens from the dot of the goal line (with a short vibration and
+ * the "goal" sound, each behind its switch); when the week moves into surplus the same ring opens
+ * at the end of the week bar. The status pill cross-fades by itself when its text changes.
+ */
 @Composable
 fun GoalScreen() {
     val graph = LocalAppGraph.current
@@ -83,15 +99,40 @@ fun GoalScreen() {
     var depositFor by remember { mutableStateOf<SavingsGoalEntity?>(null) }
     var deleting by remember { mutableStateOf<SavingsGoalEntity?>(null) }
 
+    val feedback = rememberFeedbackActions()
+    val animations = LocalFeedback.current.animations
+    // When each moment was triggered (uptime millis; 0 = not in this visit) — see pulseProgress.
+    var goalPulseAt by remember { mutableLongStateOf(0L) }
+    var weekPulseAt by remember { mutableLongStateOf(0L) }
+    val goalMet = status?.isGoalMet == true
+    val monthKey = state.month.toString()
+    LaunchedEffect(goalMet, monthKey) {
+        if (goalMet) {
+            // The line first finishes growing, so the ring opens from a dot that stands still.
+            if (animations) delay(BAR_ANIM_MS.toLong())
+            if (graph.settings.markGoalCelebrated(monthKey)) {
+                goalPulseAt = SystemClock.uptimeMillis()
+                feedback.goalReached()
+            }
+        }
+    }
+    val surplusWeekStart: Long? = week?.takeIf { it.isSurplus && it.goalAgorot > 0L }?.range?.start?.toEpochDay()
+    LaunchedEffect(surplusWeekStart) {
+        if (surplusWeekStart != null) {
+            if (animations) delay(BAR_ANIM_MS.toLong())
+            if (graph.settings.markWeekCelebrated(surplusWeekStart)) weekPulseAt = SystemClock.uptimeMillis()
+        }
+    }
+
     LazyColumn(
         Modifier.fillMaxSize().statusBarsPadding(),
         contentPadding = PaddingValues(start = 22.dp, end = 22.dp, top = 12.dp, bottom = 8.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        item { ScreenHeader(stringResource(R.string.goal_title), onBack = null) }
+        item(key = "header") { ScreenHeader(stringResource(R.string.goal_title), onBack = null) }
 
         // Hero: saved this month + % of goal line + status pill + shortfall
-        item {
+        item(key = "hero") {
             val saved = status?.savedAgorot ?: 0L
             val negative = saved < 0L
             val onTrack = status?.onTrack ?: true
@@ -107,10 +148,11 @@ fun GoalScreen() {
                     }
                 }
                 Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(
-                        Fmt.moneyAgorot(abs(saved)),
-                        style = DriftType.Hero, color = if (negative) DriftColors.Orange else DriftColors.Text,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.alignByBaseline(),
+                    // A dim "—" until the month is loaded; later changes roll from the old number.
+                    HeroNumber(
+                        value = status?.let { wholeShekels(Money.toShekels(it.savedAgorot)) },
+                        color = if (negative) DriftColors.Orange else DriftColors.Text,
+                        modifier = Modifier.alignByBaseline(),
                     )
                     Text(stringResource(R.string.shekel), style = DriftType.HeroCurrency, color = DriftColors.TextSecondary, modifier = Modifier.alignByBaseline())
                 }
@@ -123,9 +165,11 @@ fun GoalScreen() {
                         fraction = bar.fraction,
                         color = if (onTrack) DriftColors.Lime else DriftColors.Orange,
                         modifier = Modifier.weight(1f),
+                        pulseAtMillis = goalPulseAt,
                     )
                     Text(
-                        if (negative) stringResource(R.string.goal_short_of_goal, Fmt.moneyAgorot(abs(saved)), Fmt.moneyAgorot(state.monthlyGoalAgorot))
+                        if (status == null) "—"
+                        else if (negative) stringResource(R.string.goal_short_of_goal, Fmt.moneyAgorot(abs(saved)), Fmt.moneyAgorot(state.monthlyGoalAgorot))
                         else "${Fmt.percent(bar)} · ${stringResource(R.string.out_of, Fmt.moneyAgorot(saved), Fmt.moneyAgorot(state.monthlyGoalAgorot))}",
                         style = DriftType.Label12, color = DriftColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
@@ -148,7 +192,7 @@ fun GoalScreen() {
         }
 
         // Week card
-        item {
+        item(key = "week") {
             GlassCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -180,7 +224,7 @@ fun GoalScreen() {
                             style = DriftType.Label13, color = DriftColors.TextSecondary, modifier = Modifier.alignByBaseline(),
                         )
                     }
-                    CategoryBar(bar.fraction, if (deficit) DriftColors.Orange else DriftColors.Lime)
+                    CategoryBar(bar.fraction, if (deficit) DriftColors.Orange else DriftColors.Lime, pulseAtMillis = weekPulseAt)
                     if (week != null) {
                         Text(
                             when {
@@ -218,7 +262,7 @@ fun GoalScreen() {
 
         // Recommendation line
         if (status != null && !status.isGoalMet) {
-            item {
+            item(key = "recommendation") {
                 GlassCard(Modifier.fillMaxWidth(), radius = 16.dp, borderColor = DriftColors.PlusBorder) {
                     Text(
                         if (status.mainJobIsDaily) stringResource(R.string.goal_recommendation_days, status.remainingDays, Fmt.moneyAgorot(status.remainingToGoalAgorot))
@@ -231,7 +275,7 @@ fun GoalScreen() {
         }
 
         // Editable targets
-        item {
+        item(key = "targets") {
             Column {
                 SectionHeader(stringResource(R.string.goal_targets))
                 GlassCard(Modifier.fillMaxWidth()) {
@@ -259,7 +303,7 @@ fun GoalScreen() {
         }
 
         // 6-month history
-        item {
+        item(key = "history") {
             Column {
                 SectionHeader(stringResource(R.string.goal_history))
                 GlassCard(Modifier.fillMaxWidth()) {
@@ -273,8 +317,8 @@ fun GoalScreen() {
         }
 
         // Long-term savings goals (moved from the savings screen)
-        item { SectionHeader(stringResource(R.string.goal_long_term), stringResource(R.string.savings_new_goal), onAction = { showNew = true }) }
-        if (state.longTerm.isEmpty() && !state.loading) item { EmptyNote(stringResource(R.string.savings_no_goals)) }
+        item(key = "long-term-header") { SectionHeader(stringResource(R.string.goal_long_term), stringResource(R.string.savings_new_goal), onAction = { showNew = true }) }
+        if (state.longTerm.isEmpty() && !state.loading) item(key = "long-term-empty") { EmptyNote(stringResource(R.string.savings_no_goals)) }
         items(state.longTerm, key = { it.goal.id }) { item ->
             GlassCard(Modifier.fillMaxWidth(), radius = 20.dp) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -320,7 +364,7 @@ fun GoalScreen() {
                 }
             }
         }
-        item { Spacer(Modifier.height(4.dp)) }
+        item(key = "end") { Spacer(Modifier.height(4.dp)) }
     }
 
     if (editMonthly) {
@@ -359,6 +403,7 @@ fun GoalScreen() {
         val depositFocus = remember { FocusRequester() }
         val confirmDeposit: () -> Unit = {
             if (value != null && value > 0) {
+                feedback.saved()
                 vm.deposit(g.id, value)
                 depositFor = null
             }
@@ -383,7 +428,11 @@ fun GoalScreen() {
             title = g.name,
             onDismiss = { deleting = null },
             confirmText = stringResource(R.string.delete),
-            onConfirm = { vm.delete(g.id); deleting = null },
+            onConfirm = {
+                feedback.deleted()
+                vm.delete(g.id)
+                deleting = null
+            },
             dismissText = stringResource(R.string.cancel),
         ) { Text(stringResource(R.string.savings_delete_confirm), style = DriftType.Body, color = DriftColors.TextSecondary) }
     }

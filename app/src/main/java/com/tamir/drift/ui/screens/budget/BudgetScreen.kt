@@ -93,18 +93,21 @@ fun BudgetScreen(onBack: () -> Unit) {
                     val total = summary?.totalBudget ?: 0.0
                     StepperRow(
                         label = stringResource(R.string.budget_total),
-                        valueText = Fmt.money(total),
+                        // A dim "—" until the budget is loaded, instead of a misleading 0.
+                        valueText = if (summary == null) "—" else Fmt.money(total),
                         onDecrease = { if (summary != null) vm.setTotalBudget((total - BUDGET_STEP).coerceAtLeast(BUDGET_STEP)) },
                         onIncrease = { if (summary != null) vm.setTotalBudget(total + BUDGET_STEP) },
-                        onEdit = { editTotal = true },
+                        onEdit = { if (summary != null) editTotal = true },
                         canDecrease = summary != null && total > BUDGET_STEP,
+                        valueDim = summary == null,
                     )
                     // One value for the line and for the percent under it.
                     val bar = summary?.bar ?: BarValue.EMPTY
                     val remaining = summary?.remaining ?: 0.0
                     BudgetLine(bar.fraction, color = if (summary?.isOverBudget == true || bar.isOver) DriftColors.Orange else DriftColors.Lime)
                     Text(
-                        "${stringResource(R.string.budget_used)} ${Fmt.percent(bar)} · ${stringResource(R.string.budget_spent)} ${Fmt.signedMoney(summary?.spent ?: 0.0)} · " +
+                        if (summary == null) "—"
+                        else "${stringResource(R.string.budget_used)} ${Fmt.percent(bar)} · ${stringResource(R.string.budget_spent)} ${Fmt.signedMoney(summary.spent)} · " +
                             // Over budget is said in words ("חריגה X"), not as a negative "נשאר".
                             if (remaining < 0) "${stringResource(R.string.budget_status_over)} ${Fmt.money(abs(remaining))}"
                             else "${stringResource(R.string.budget_remaining)} ${Fmt.money(remaining)}",

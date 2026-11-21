@@ -29,6 +29,7 @@ import com.tamir.drift.ui.components.ScreenHeader
 import com.tamir.drift.ui.components.ShareSection
 import com.tamir.drift.ui.components.UnsavedChangesDialog
 import com.tamir.drift.ui.components.parseDate
+import com.tamir.drift.ui.components.rememberFeedbackActions
 import com.tamir.drift.ui.components.toFieldText
 import com.tamir.drift.ui.theme.DriftColors
 import com.tamir.drift.ui.theme.DriftType
@@ -48,6 +49,7 @@ import java.time.ZoneId
 @Composable
 fun ManualAddScreen(onDone: () -> Unit) {
     val graph = LocalAppGraph.current
+    val feedback = rememberFeedbackActions()
     val scope = rememberCoroutineScope()
     val categories by graph.categories.categories.collectAsStateWithLifecycle(initialValue = emptyList())
     val zone = ZoneId.systemDefault()
@@ -89,6 +91,7 @@ fun ManualAddScreen(onDone: () -> Unit) {
         val category = categoryId
         val noteText = note
         closing = true
+        feedback.saved()
         graph.scope.launch {
             val id = graph.transactions.addManual(ts, full, my, isShared, merchantText, category, noteText)
             graph.alertChecker.checkAndNotify()

@@ -1,6 +1,7 @@
 package com.tamir.drift
 
 import android.app.Application
+import com.tamir.drift.backup.BackupScheduler
 import com.tamir.drift.capture.CaptureStatus
 import com.tamir.drift.di.AppGraph
 import com.tamir.drift.notify.DailyCheckScheduler
@@ -25,9 +26,12 @@ class DriftApp : Application() {
             graph.categories.ensureSeeded()
             graph.work.ensureSeeded()
             graph.settings.ensureTrackingStart()
-            WeeklySummaryScheduler.schedule(this@DriftApp, graph.settings.current())
+            val settings = graph.settings.current()
+            WeeklySummaryScheduler.schedule(this@DriftApp, settings)
             WorkSummaryScheduler.schedule(this@DriftApp)
             DailyCheckScheduler.schedule(this@DriftApp)
+            // The weekly automatic backup keeps its existing schedule (a new one starts in settings).
+            if (settings.backupAutoEnabled) BackupScheduler.schedule(this@DriftApp, restart = false)
         }
     }
 }

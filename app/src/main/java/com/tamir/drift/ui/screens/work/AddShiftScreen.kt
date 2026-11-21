@@ -63,6 +63,7 @@ import com.tamir.drift.ui.components.ScreenHeader
 import com.tamir.drift.ui.components.SwitchRow
 import com.tamir.drift.ui.components.UnsavedChangesDialog
 import com.tamir.drift.ui.components.parseDate
+import com.tamir.drift.ui.components.rememberFeedbackActions
 import com.tamir.drift.ui.components.toFieldText
 import com.tamir.drift.ui.deleteShiftWithUndo
 import com.tamir.drift.ui.format.Fmt
@@ -107,6 +108,7 @@ private const val AUTOFOCUS_DELAY_MILLIS = 300L
 @Composable
 fun AddShiftScreen(shiftId: Long?, onDone: () -> Unit, initialEpochDay: Long? = null) {
     val graph = LocalAppGraph.current
+    val feedback = rememberFeedbackActions()
     val zone = ZoneId.systemDefault()
     val keyboard = LocalSoftwareKeyboardController.current
     val jobs by graph.work.jobs.collectAsStateWithLifecycle(initialValue = emptyList())
@@ -290,6 +292,7 @@ fun AddShiftScreen(shiftId: Long?, onDone: () -> Unit, initialEpochDay: Long? = 
         val noteText = note
         val travel = appliedTravel
         closing = true
+        feedback.saved()
         graph.scope.launch {
             // The wage (manual or computed) and the travel are stored apart.
             val savedId: Long = if (cur == null) {
@@ -321,6 +324,7 @@ fun AddShiftScreen(shiftId: Long?, onDone: () -> Unit, initialEpochDay: Long? = 
                     GlassIconButton(DriftIcons.Trash, stringResource(R.string.delete), {
                         if (!closing) {
                             closing = true
+                            feedback.deleted()
                             graph.deleteShiftWithUndo(shown)
                             onDone()
                         }

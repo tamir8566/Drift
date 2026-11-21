@@ -515,6 +515,46 @@
     <string name="work_day_mark_planned">סמן כמתוכנן</string>
     <string name="work_day_unmark_planned">בטל את הסימון כמתוכנן</string>
 
+    <!-- Data safety and feedback (batch C) -->
+    <string name="settings_backup">גיבוי</string>
+    <string name="backup_now">גיבוי עכשיו</string>
+    <string name="backup_last">גיבוי אחרון: %1$s</string>
+    <string name="backup_never">עדיין לא נעשה גיבוי</string>
+    <string name="backup_working">מגבה…</string>
+    <string name="backup_done">הגיבוי נשמר</string>
+    <string name="backup_failed">הגיבוי נכשל. נסה לשמור אותו במקום אחר.</string>
+    <string name="backup_restore">שחזור מגיבוי</string>
+    <string name="backup_restore_desc">מחליף את כל הנתונים שבטלפון בנתונים שבקובץ</string>
+    <string name="backup_auto">גיבוי אוטומטי שבועי</string>
+    <string name="backup_auto_desc">פעם בשבוע נשמר קובץ בתיקייה שתבחר. חמשת האחרונים נשארים.</string>
+    <string name="backup_folder">תיקיית הגיבוי</string>
+    <string name="backup_folder_unnamed">תיקייה שנבחרה</string>
+    <string name="backup_folder_failed">לא התקבלה גישה לתיקייה. בחר תיקייה אחרת.</string>
+    <string name="backup_auto_failed">הגיבוי האוטומטי נכשל: התיקייה לא נמצאה או שהגישה אליה בוטלה. בחר תיקייה מחדש.</string>
+    <string name="backup_not_encrypted">קובץ הגיבוי אינו מוצפן: מי שמחזיק בו יכול לקרוא את כל הנתונים. שמור אותו במקום שרק לך יש גישה אליו.</string>
+    <string name="restore_checking">בודק את הקובץ…</string>
+    <string name="restore_confirm_text">הנתונים שבטלפון עכשיו יוחלפו בגיבוי מתאריך %1$s בשעה %2$s. מה שנוסף אחרי הגיבוי יימחק, ואי אפשר לבטל את הפעולה.</string>
+    <string name="restore_confirm_note">אחרי השחזור האפליקציה תיפתח מחדש.</string>
+    <string name="restore_confirm_action">שחזור</string>
+    <string name="restore_working">משחזר…</string>
+    <string name="restore_unreadable">הקובץ הזה אינו גיבוי תקין של דריפט. הנתונים שבטלפון לא השתנו.</string>
+    <string name="restore_newer">הגיבוי נוצר בגרסה חדשה יותר של האפליקציה. עדכן את האפליקציה ונסה שוב. הנתונים שבטלפון לא השתנו.</string>
+    <string name="restore_failed">השחזור נכשל. הנתונים שבטלפון נשארו כמו שהיו.</string>
+    <string name="home_backup_failed">הגיבוי האוטומטי נכשל</string>
+    <string name="home_backup_failed_action">לבדוק</string>
+    <string name="home_backup_none">אין גיבוי לנתונים</string>
+    <string name="home_backup_none_action">להגדיר</string>
+    <string name="home_attention_dismiss">הסתרה</string>
+    <string name="settings_feedback">משוב</string>
+    <string name="feedback_animations">אנימציות</string>
+    <string name="feedback_animations_desc">פסים שמתמלאים, מספרים שמתעדכנים ומעברי מסך</string>
+    <string name="feedback_haptics">רטט</string>
+    <string name="feedback_haptics_desc">רטט קצר בשמירה, במחיקה ובשינוי ערך</string>
+    <string name="feedback_sound">צלילים</string>
+    <string name="feedback_sound_desc">צליל שקט בשמירה, בהגעה ליעד ובקליטת הוצאה כשהאפליקציה פתוחה. לא נשמע כשהטלפון במצב שקט או רטט.</string>
+    <string name="whats_new_title">מה חדש</string>
+    <string name="whats_new_close">הבנתי</string>
+
     <string-array name="day_initials">
         <item>א</item><item>ב</item><item>ג</item><item>ד</item><item>ה</item><item>ו</item><item>ש</item>
     </string-array>

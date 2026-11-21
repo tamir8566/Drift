@@ -1,5 +1,7 @@
 package com.tamir.drift.ui.components
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -14,10 +16,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -30,9 +34,15 @@ enum class BottomTab { HOME, WHERE, WORK, GOAL }
  * Bottom bar from the mockup: line icons only, no background; active in lime, others dim;
  * the plus in the middle is a 52dp glass circle with a lime 45% border.
  * Order (RTL, start→end): home · where · + · work · goal (PRD 8 Nov).
+ * While the plus menu is open ([menuOpen]) the plus turns 45° into a close mark.
  */
 @Composable
-fun DriftBottomBar(active: BottomTab?, onTab: (BottomTab) -> Unit, onAdd: () -> Unit, modifier: Modifier = Modifier) {
+fun DriftBottomBar(active: BottomTab?, onTab: (BottomTab) -> Unit, onAdd: () -> Unit, modifier: Modifier = Modifier, menuOpen: Boolean = false) {
+    val plusRotation by animateFloatAsState(
+        targetValue = if (menuOpen) Motion.PLUS_ROTATE_DEGREES else 0f,
+        animationSpec = tween(if (LocalFeedback.current.animations) Motion.PLUS_ROTATE_MS else 0),
+        label = "plusRotation",
+    )
     Row(
         modifier.fillMaxWidth().padding(start = 22.dp, end = 22.dp, top = 4.dp, bottom = 22.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -49,7 +59,7 @@ fun DriftBottomBar(active: BottomTab?, onTab: (BottomTab) -> Unit, onAdd: () -> 
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = ripple(color = DriftColors.Lime), onClick = onAdd),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(DriftIcons.Plus, stringResource(R.string.nav_add), tint = DriftColors.Lime, modifier = Modifier.size(22.dp))
+            Icon(DriftIcons.Plus, stringResource(R.string.nav_add), tint = DriftColors.Lime, modifier = Modifier.size(22.dp).rotate(plusRotation))
         }
         BarIcon(DriftIcons.Work, stringResource(R.string.nav_work), active == BottomTab.WORK) { onTab(BottomTab.WORK) }
         BarIcon(DriftIcons.Goal, stringResource(R.string.nav_goal), active == BottomTab.GOAL) { onTab(BottomTab.GOAL) }

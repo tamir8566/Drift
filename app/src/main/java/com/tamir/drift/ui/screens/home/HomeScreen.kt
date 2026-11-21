@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -44,6 +45,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tamir.drift.R
 import com.tamir.drift.capture.CaptureStatus
+import com.tamir.drift.data.settings.SettingsStore
 import com.tamir.drift.domain.budget.CategorySpend
 import com.tamir.drift.domain.format.BarValue
 import com.tamir.drift.ui.LocalAppGraph
@@ -52,12 +54,17 @@ import com.tamir.drift.ui.components.CategoryCard
 import com.tamir.drift.ui.components.DriftIcons
 import com.tamir.drift.ui.components.EmptyNote
 import com.tamir.drift.ui.components.GlassIconButton
+import com.tamir.drift.ui.components.HeroNumber
 import com.tamir.drift.ui.components.SectionHeader
 import com.tamir.drift.ui.components.Stat
 import com.tamir.drift.ui.components.StatTriplet
 import com.tamir.drift.ui.components.StatusPill
 import com.tamir.drift.ui.components.TxRow
 import com.tamir.drift.ui.components.composeColor
+import com.tamir.drift.ui.components.isNewSince
+import com.tamir.drift.ui.components.rememberListSeenBefore
+import com.tamir.drift.ui.components.rowMotion
+import com.tamir.drift.ui.components.wholeShekels
 import com.tamir.drift.ui.driftViewModel
 import com.tamir.drift.ui.format.Fmt
 import com.tamir.drift.ui.theme.DriftColors
@@ -83,6 +90,8 @@ fun HomeScreen(
     val state by vm.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val summary = state.summary
+    // Expenses that arrived since this list was last looked at land with a short tint.
+    val recentSeenBefore = rememberListSeenBefore(SettingsStore.LIST_HOME_RECENT)
 
     // Capture watchdog: the two permissions automatic capture needs, re-read on every return to the app.
     var refresh by remember { mutableIntStateOf(0) }
@@ -112,7 +121,7 @@ fun HomeScreen(
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         // Header: "נובמבר · יום 8/30" + search & settings glass buttons
-        item {
+        item(key = "header") {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 val day = summary?.dayOfMonth ?: java.time.LocalDate.now().dayOfMonth
                 val days = summary?.daysInMonth ?: state.month.lengthOfMonth()
@@ -128,11 +137,13 @@ fun HomeScreen(
         }
 
         // Attention strip: quiet rows, only when something needs the user — what was not parsed,
-        // capture that is off, and merchants that still wait for a category.
+        // capture that is off, merchants that still wait for a category, and the state of the backup.
         val unparsed = state.unparsedCount
         val unsorted = state.unsortedMerchants
-        if (unparsed > 0 || !listenerOn || smsMissing || unsorted > 0) {
-            item {
+        val backupFailed = state.backupFailed
+        val backupNudge = state.backupNudge && !backupFailed
+        if (unparsed > 0 || !listenerOn || smsMissing || unsorted > 0 || backupFailed || backupNudge) {
+            item(key = "attention") {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (unparsed > 0) {
                         AttentionRow(
@@ -161,12 +172,27 @@ fun HomeScreen(
                             onClick = onOpenUnsorted,
                         )
                     }
+                    if (backupFailed) {
+                        // The folder is gone or its permission was revoked: settings → "גיבוי" fixes it.
+                        AttentionRow(
+                            text = stringResource(R.string.home_backup_failed),
+                            action = stringResource(R.string.home_backup_failed_action),
+                            onClick = onOpenSettings,
+                        )
+                    } else if (backupNudge) {
+                        AttentionRow(
+                            text = stringResource(R.string.home_backup_none),
+                            action = stringResource(R.string.home_backup_none_action),
+                            onClick = onOpenSettings,
+                            onDismiss = { vm.dismissBackupNudge() },
+                        )
+                    }
                 }
             }
         }
 
         // Hero: remaining + budget line
-        item {
+        item(key = "hero") {
             val remaining = summary?.remaining ?: 0.0
             val over = remaining < 0
             Column(
@@ -178,10 +204,10 @@ fun HomeScreen(
                     style = DriftType.Label13, color = DriftColors.TextSecondary,
                 )
                 Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(
-                        Fmt.money(kotlin.math.abs(remaining)),
-                        style = DriftType.Hero, color = if (over) DriftColors.Orange else DriftColors.Text,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    // A dim "—" until the month is loaded; later changes roll from the old number.
+                    HeroNumber(
+                        value = summary?.let { wholeShekels(it.remaining) },
+                        color = if (over) DriftColors.Orange else DriftColors.Text,
                         modifier = Modifier.alignByBaseline(),
                     )
                     Text(
@@ -200,7 +226,8 @@ fun HomeScreen(
                         modifier = Modifier.weight(1f),
                     )
                     Text(
-                        "${Fmt.percent(bar)} · ${stringResource(R.string.out_of, Fmt.signedMoney(summary?.spent ?: 0.0), Fmt.money(summary?.totalBudget ?: 0.0))}",
+                        if (summary == null) "—"
+                        else "${Fmt.percent(bar)} · ${stringResource(R.string.out_of, Fmt.signedMoney(summary.spent), Fmt.money(summary.totalBudget))}",
                         style = DriftType.Label12, color = DriftColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
                 }
@@ -216,7 +243,7 @@ fun HomeScreen(
         }
 
         // Three stats: per day · this week · vs previous month
-        item {
+        item(key = "stats") {
             val perDay = summary?.allowedPerDay ?: 0.0
             val perDayText = if (summary?.isOverBudget == true) stringResource(R.string.home_exceeded)
             else stringResource(R.string.amount_with_shekel, Fmt.money(perDay))
@@ -239,7 +266,7 @@ fun HomeScreen(
         }
 
         // PRD 8 Nov: "הרווחת החודש X ₪ · נחסכו Y ₪" → goal screen
-        item {
+        item(key = "earned") {
             Row(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(onClick = onOpenGoal).padding(horizontal = 4.dp, vertical = 2.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -267,7 +294,7 @@ fun HomeScreen(
         }
 
         // Category grid 2×2
-        item {
+        item(key = "categories") {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 SectionHeader(stringResource(R.string.home_by_category), stringResource(R.string.all), onAction = onOpenWhere)
                 CategoryGrid(state.topCategories, onOpenCategory = onOpenCategory, names = { state.categories[it]?.name ?: it }, colors = { state.categories[it].composeColor() })
@@ -275,22 +302,25 @@ fun HomeScreen(
         }
 
         // Recent transactions
-        item {
+        item(key = "recent-header") {
             SectionHeader(stringResource(R.string.home_recent), stringResource(R.string.all), onAction = onOpenAll, modifier = Modifier.padding(bottom = 0.dp))
         }
         if (state.recent.isEmpty() && !state.loading) {
-            item { EmptyNote(stringResource(R.string.empty_list)) }
+            item(key = "recent-empty") { EmptyNote(stringResource(R.string.empty_list)) }
         }
         items(state.recent, key = { it.id }) { tx ->
-            TxRow(tx, state.categories, onClick = { onOpenTransaction(tx.id) })
+            TxRow(tx, state.categories, onClick = { onOpenTransaction(tx.id) }, modifier = rowMotion(isNewSince(tx.createdAt, recentSeenBefore)))
         }
-        item { Spacer(Modifier.height(4.dp)) }
+        item(key = "end") { Spacer(Modifier.height(4.dp)) }
     }
 }
 
-/** One quiet line of the attention strip: an orange dot, what is wrong, and the lime action that fixes it. */
+/**
+ * One quiet line of the attention strip: an orange dot, what is wrong, and the lime action that
+ * fixes it. With [onDismiss] the line also carries a small close mark that hides it for a while.
+ */
 @Composable
-private fun AttentionRow(text: String, action: String, onClick: () -> Unit) {
+private fun AttentionRow(text: String, action: String, onClick: () -> Unit, onDismiss: (() -> Unit)? = null) {
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(onClick = onClick).padding(horizontal = 4.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -299,6 +329,12 @@ private fun AttentionRow(text: String, action: String, onClick: () -> Unit) {
         Box(Modifier.size(8.dp).background(DriftColors.Orange, CircleShape))
         Text(text, style = DriftType.Label12, color = DriftColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
         Text(action, style = DriftType.Link12, color = DriftColors.Lime, maxLines = 1)
+        if (onDismiss != null) {
+            Icon(
+                DriftIcons.Close, stringResource(R.string.home_attention_dismiss), tint = DriftColors.TextDim,
+                modifier = Modifier.size(26.dp).clip(CircleShape).clickable(onClick = onDismiss).padding(7.dp),
+            )
+        }
     }
 }
 

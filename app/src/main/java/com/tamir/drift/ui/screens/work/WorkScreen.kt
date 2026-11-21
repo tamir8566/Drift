@@ -38,6 +38,7 @@ import com.tamir.drift.data.db.isDaily
 import com.tamir.drift.data.db.pay
 import com.tamir.drift.data.db.totalAgorot
 import com.tamir.drift.data.repo.Money
+import com.tamir.drift.data.settings.SettingsStore
 import com.tamir.drift.domain.money.AmountInput
 import com.tamir.drift.domain.work.MIN_HOURLY_WAGE_AGOROT
 import com.tamir.drift.domain.work.MIN_HOURLY_WAGE_SINCE
@@ -51,6 +52,7 @@ import com.tamir.drift.ui.components.DriftTextField
 import com.tamir.drift.ui.components.EmptyNote
 import com.tamir.drift.ui.components.GlassCard
 import com.tamir.drift.ui.components.HairlineDivider
+import com.tamir.drift.ui.components.HeroNumber
 import com.tamir.drift.ui.components.JobCard
 import com.tamir.drift.ui.components.LegendDot
 import com.tamir.drift.ui.components.MonthCalendar
@@ -60,6 +62,11 @@ import com.tamir.drift.ui.components.Stat
 import com.tamir.drift.ui.components.StatTriplet
 import com.tamir.drift.ui.components.SwitchRow
 import com.tamir.drift.ui.components.TransactionRow
+import com.tamir.drift.ui.components.isNewSince
+import com.tamir.drift.ui.components.rememberFeedbackActions
+import com.tamir.drift.ui.components.rememberListSeenBefore
+import com.tamir.drift.ui.components.rowMotion
+import com.tamir.drift.ui.components.wholeShekels
 import com.tamir.drift.ui.driftViewModel
 import com.tamir.drift.ui.format.Fmt
 import com.tamir.drift.ui.theme.DriftColors
@@ -80,6 +87,9 @@ fun WorkScreen(onAddShift: () -> Unit, onAddShiftOn: (LocalDate) -> Unit, onEdit
     val graph = LocalAppGraph.current
     val vm = driftViewModel { WorkViewModel(graph) }
     val state by vm.state.collectAsStateWithLifecycle()
+    val feedback = rememberFeedbackActions()
+    // Shifts that were added since this list was last looked at land with a short tint.
+    val shiftsSeenBefore = rememberListSeenBefore(SettingsStore.LIST_WORK_RECENT)
 
     var showNewJob by remember { mutableStateOf(false) }
     var editingJob by remember { mutableStateOf<JobEntity?>(null) }
@@ -91,7 +101,7 @@ fun WorkScreen(onAddShift: () -> Unit, onAddShiftOn: (LocalDate) -> Unit, onEdit
         contentPadding = PaddingValues(start = 22.dp, end = 22.dp, top = 12.dp, bottom = 8.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        item {
+        item(key = "header") {
             ScreenHeader(
                 stringResource(R.string.work_title), onBack = null,
                 endContent = { Chip(stringResource(R.string.work_add_job_short), selected = true, onClick = { showNewJob = true }) },
@@ -99,13 +109,15 @@ fun WorkScreen(onAddShift: () -> Unit, onAddShiftOn: (LocalDate) -> Unit, onEdit
         }
 
         // Hero: earned this month
-        item {
+        item(key = "hero") {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(stringResource(R.string.work_earned_month), style = DriftType.Label13, color = DriftColors.TextSecondary)
                 Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(
-                        Fmt.moneyAgorot(state.earnedMonthAgorot), style = DriftType.Hero, color = DriftColors.Text,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.alignByBaseline(),
+                    // A dim "—" until the shifts are loaded; a new shift rolls the number to its new value.
+                    HeroNumber(
+                        value = if (state.loading) null else wholeShekels(Money.toShekels(state.earnedMonthAgorot)),
+                        color = DriftColors.Text,
+                        modifier = Modifier.alignByBaseline(),
                     )
                     Text(stringResource(R.string.shekel), style = DriftType.HeroCurrency, color = DriftColors.TextSecondary, modifier = Modifier.alignByBaseline())
                 }
@@ -120,7 +132,7 @@ fun WorkScreen(onAddShift: () -> Unit, onAddShiftOn: (LocalDate) -> Unit, onEdit
         }
 
         // This week · hours · shifts
-        item {
+        item(key = "stats") {
             StatTriplet(
                 listOf(
                     Stat(stringResource(R.string.work_this_week), stringResource(R.string.amount_with_shekel, Fmt.moneyAgorot(state.earnedWeekAgorot)), DriftColors.Lime),
@@ -132,7 +144,7 @@ fun WorkScreen(onAddShift: () -> Unit, onAddShiftOn: (LocalDate) -> Unit, onEdit
 
         // Two employers: tax / National Insurance coordination, ticked by the user, per calendar year.
         if (state.showTwoEmployers) {
-            item {
+            item(key = "two-employers") {
                 GlassCard(Modifier.fillMaxWidth(), borderColor = DriftColors.PlusBorder) {
                     Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -159,7 +171,7 @@ fun WorkScreen(onAddShift: () -> Unit, onAddShiftOn: (LocalDate) -> Unit, onEdit
         }
 
         // Calendar
-        item {
+        item(key = "calendar") {
             GlassCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     MonthCalendar(
@@ -173,7 +185,10 @@ fun WorkScreen(onAddShift: () -> Unit, onAddShiftOn: (LocalDate) -> Unit, onEdit
                                 // A day with shifts shows them — one or several, always the same list.
                                 shifts.isNotEmpty() -> { openDay = date }
                                 // A future day can only be planned.
-                                date.isAfter(state.today) -> vm.togglePlanned(date)
+                                date.isAfter(state.today) -> {
+                                    feedback.tick()
+                                    vm.togglePlanned(date)
+                                }
                                 // Today: add the shift, or mark the day as planned.
                                 date == state.today -> { openDay = date }
                                 // A past day without a shift: add it, on that date.
@@ -193,7 +208,7 @@ fun WorkScreen(onAddShift: () -> Unit, onAddShiftOn: (LocalDate) -> Unit, onEdit
         }
 
         // Per-job cards 2×2
-        item {
+        item(key = "jobs") {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 SectionHeader(stringResource(R.string.work_by_job))
                 if (state.jobCards.isEmpty() && !state.loading) EmptyNote(stringResource(R.string.work_no_jobs))
@@ -237,14 +252,14 @@ fun WorkScreen(onAddShift: () -> Unit, onAddShiftOn: (LocalDate) -> Unit, onEdit
         }
 
         // Recent shifts
-        item { SectionHeader(stringResource(R.string.work_recent_shifts), stringResource(R.string.add_menu_shift), onAction = onAddShift, modifier = Modifier.padding(bottom = 0.dp)) }
-        if (state.recentShifts.isEmpty() && !state.loading) item { EmptyNote(stringResource(R.string.work_no_shifts)) }
+        item(key = "recent-header") { SectionHeader(stringResource(R.string.work_recent_shifts), stringResource(R.string.add_menu_shift), onAction = onAddShift, modifier = Modifier.padding(bottom = 0.dp)) }
+        if (state.recentShifts.isEmpty() && !state.loading) item(key = "recent-empty") { EmptyNote(stringResource(R.string.work_no_shifts)) }
         items(state.recentShifts, key = { it.id }) { shift ->
-            ShiftRow(shift, state.jobsById[shift.jobId], onClick = { onEditShift(shift.id) })
+            ShiftRow(shift, state.jobsById[shift.jobId], onClick = { onEditShift(shift.id) }, modifier = rowMotion(isNewSince(shift.createdAt, shiftsSeenBefore)))
         }
         // Older shifts are reached from here (the list above shows only the latest ones).
         if (state.totalShifts > 0) {
-            item {
+            item(key = "all-shifts") {
                 Text(
                     stringResource(R.string.work_all_shifts_count, state.totalShifts), style = DriftType.Link12, color = DriftColors.Lime,
                     modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable(onClick = onOpenAllShifts).padding(horizontal = 6.dp, vertical = 6.dp),
@@ -253,7 +268,7 @@ fun WorkScreen(onAddShift: () -> Unit, onAddShiftOn: (LocalDate) -> Unit, onEdit
         }
 
         // Manage jobs
-        item {
+        item(key = "manage") {
             Column {
                 SectionHeader(stringResource(R.string.work_manage_jobs), stringResource(R.string.work_add_job), onAction = { showNewJob = true })
                 GlassCard(Modifier.fillMaxWidth()) {
@@ -272,7 +287,7 @@ fun WorkScreen(onAddShift: () -> Unit, onAddShiftOn: (LocalDate) -> Unit, onEdit
                 }
             }
         }
-        item { Spacer(Modifier.height(4.dp)) }
+        item(key = "end") { Spacer(Modifier.height(4.dp)) }
     }
 
     if (showNewJob) {
@@ -313,7 +328,11 @@ fun WorkScreen(onAddShift: () -> Unit, onAddShiftOn: (LocalDate) -> Unit, onEdit
                 DayAction(
                     stringResource(if (planned) R.string.work_day_unmark_planned else R.string.work_day_mark_planned),
                     DriftColors.TextSecondary,
-                ) { vm.togglePlanned(day); openDay = null }
+                ) {
+                    feedback.tick()
+                    vm.togglePlanned(day)
+                    openDay = null
+                }
             }
         }
     }
