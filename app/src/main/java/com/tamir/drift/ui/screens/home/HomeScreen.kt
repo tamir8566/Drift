@@ -55,6 +55,7 @@ import com.tamir.drift.ui.components.GlassIconButton
 import com.tamir.drift.ui.components.SectionHeader
 import com.tamir.drift.ui.components.Stat
 import com.tamir.drift.ui.components.StatTriplet
+import com.tamir.drift.ui.components.StatusPill
 import com.tamir.drift.ui.components.TxRow
 import com.tamir.drift.ui.components.composeColor
 import com.tamir.drift.ui.driftViewModel
@@ -73,6 +74,7 @@ fun HomeScreen(
     onOpenSettings: () -> Unit,
     onOpenSearch: () -> Unit,
     onOpenUnparsed: () -> Unit,
+    onOpenUnsorted: () -> Unit,
     onOpenBudget: () -> Unit,
     onOpenGoal: () -> Unit,
 ) {
@@ -125,9 +127,11 @@ fun HomeScreen(
             }
         }
 
-        // Attention strip: at most two quiet rows, only when something needs the user.
+        // Attention strip: quiet rows, only when something needs the user — what was not parsed,
+        // capture that is off, and merchants that still wait for a category.
         val unparsed = state.unparsedCount
-        if (unparsed > 0 || !listenerOn || smsMissing) {
+        val unsorted = state.unsortedMerchants
+        if (unparsed > 0 || !listenerOn || smsMissing || unsorted > 0) {
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (unparsed > 0) {
@@ -148,6 +152,13 @@ fun HomeScreen(
                             text = stringResource(R.string.home_sms_off),
                             action = stringResource(R.string.home_capture_action),
                             onClick = { smsLauncher.launch(Manifest.permission.RECEIVE_SMS) },
+                        )
+                    }
+                    if (unsorted > 0) {
+                        AttentionRow(
+                            text = if (unsorted == 1) stringResource(R.string.home_unsorted_one) else stringResource(R.string.home_unsorted_many, unsorted),
+                            action = stringResource(R.string.home_unsorted_action),
+                            onClick = onOpenUnsorted,
                         )
                     }
                 }
@@ -178,6 +189,8 @@ fun HomeScreen(
                         modifier = Modifier.alignByBaseline(),
                     )
                 }
+                // The whole hero opens the budget screen; this small link says so.
+                Text(stringResource(R.string.home_edit_budget), style = DriftType.Label11, color = DriftColors.Lime, maxLines = 1)
                 Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     // One value for the line and for the percent next to it.
                     val bar = summary?.bar ?: BarValue.EMPTY
@@ -189,6 +202,14 @@ fun HomeScreen(
                     Text(
                         "${Fmt.percent(bar)} · ${stringResource(R.string.out_of, Fmt.signedMoney(summary?.spent ?: 0.0), Fmt.money(summary?.totalBudget ?: 0.0))}",
                         style = DriftType.Label12, color = DriftColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                // "On track" with zero taps: the pace word of the budget screen, under the line.
+                if (summary != null) {
+                    val goodPace = summary.isGoodPace
+                    StatusPill(
+                        stringResource(if (goodPace) R.string.home_good_pace else R.string.home_too_fast),
+                        if (goodPace) DriftColors.Teal else DriftColors.Orange,
                     )
                 }
             }
@@ -232,7 +253,16 @@ fun HomeScreen(
                     style = DriftType.Label12, color = DriftColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
-                Text(stringResource(R.string.nav_goal), style = DriftType.Link12, color = DriftColors.Lime)
+                // The goal screen's status, readable without opening it (the row still opens the goal).
+                val onTrack = state.goalOnTrack
+                if (onTrack != null) {
+                    StatusPill(
+                        stringResource(if (onTrack) R.string.goal_on_track else R.string.goal_off_track),
+                        if (onTrack) DriftColors.Lime else DriftColors.Orange,
+                    )
+                } else {
+                    Text(stringResource(R.string.nav_goal), style = DriftType.Link12, color = DriftColors.Lime)
+                }
             }
         }
 

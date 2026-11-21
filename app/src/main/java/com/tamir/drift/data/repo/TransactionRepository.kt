@@ -64,5 +64,28 @@ class TransactionRepository(private val db: DriftDatabase, private val categorie
         return others.size
     }
 
+    /**
+     * Classifies a whole merchant at once (the "בתי עסק מחכים לסיווג" inbox): learns the rule and
+     * moves every stored transaction of that merchant ([MerchantKey]) to the category. Choosing the
+     * category the rows already have ("באמת אחר") only records the rule.
+     *
+     * @return how many transactions changed category.
+     */
+    suspend fun recategorizeMerchant(merchant: String, categoryId: String): Int {
+        val key = MerchantKey.normalize(merchant)
+        if (key.isEmpty()) return 0
+        categories.learnRule(merchant, categoryId)
+        val ids = db.transactions().getAll()
+            .filter { it.categoryId != categoryId && it.merchant.isNotBlank() && MerchantKey.normalize(it.merchant) == key }
+            .map { it.id }
+        ids.chunked(500).forEach { chunk -> db.transactions().setCategory(chunk, categoryId) }
+        return ids.size
+    }
+
     suspend fun delete(id: Long) = db.transactions().deleteById(id)
+
+    /** Undo of a delete: writes the same row back under its own id. */
+    suspend fun restore(t: TransactionEntity) {
+        db.transactions().upsert(t)
+    }
 }

@@ -3,6 +3,7 @@ package com.tamir.drift.ui.screens.home
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.tamir.drift.data.db.CategoryEntity
+import com.tamir.drift.data.db.Origin
 import com.tamir.drift.data.db.TransactionEntity
 import com.tamir.drift.data.repo.Money
 import com.tamir.drift.data.repo.toShiftSummaries
@@ -10,6 +11,8 @@ import com.tamir.drift.data.repo.toSummaries
 import com.tamir.drift.di.AppGraph
 import com.tamir.drift.domain.budget.CategorySpend
 import com.tamir.drift.domain.budget.MonthSummary
+import com.tamir.drift.domain.classify.UnsortedMerchants
+import com.tamir.drift.domain.model.MerchantRuleModel
 import com.tamir.drift.domain.time.sinceStart
 import com.tamir.drift.domain.work.GoalCalculator
 import kotlinx.coroutines.flow.SharingStarted
@@ -35,17 +38,24 @@ data class HomeUiState(
     val savedThisMonth: Double = 0.0,
     /** True when SMS senders are configured, i.e. the SMS permission matters for capture. */
     val smsCaptureConfigured: Boolean = true,
+    /** The goal screen's "בכיוון" / "לא בכיוון" for this month; null until loaded. */
+    val goalOnTrack: Boolean? = null,
+    /** Merchants whose expenses sit in "אחר" with no learned rule ("N בתי עסק מחכים לסיווג"). */
+    val unsortedMerchants: Int = 0,
 )
 
 class HomeViewModel(graph: AppGraph) : ViewModel() {
 
+    /** Categories with the merchant rules beside them (the typed combine below takes five flows). */
+    private val catalog = combine(graph.categories.categories, graph.categories.rules) { cats, rules -> cats to rules }
+
     val state: StateFlow<HomeUiState> = combine(
         graph.transactions.all,
-        graph.categories.categories,
+        catalog,
         graph.budgets.all,
         graph.work.shifts,
         graph.settings.settings,
-    ) { txs, cats, budgets, shifts, settings ->
+    ) { txs, (cats, rules), budgets, shifts, settings ->
         val zone = ZoneId.systemDefault()
         val today = LocalDate.now(zone)
         val month = YearMonth.from(today)
@@ -57,10 +67,26 @@ class HomeViewModel(graph: AppGraph) : ViewModel() {
         // Budget math is untouched; the earned/saved row is purely additive.
         // Computed exactly like the goal screen (agorot, expenses through the end of today), so
         // "נחסכו" here and "נחסך החודש" there are always the same number.
-        val earnedAgorot = GoalCalculator.earnedIn(shifts.toShiftSummaries().sinceStart(window), month)
+        val countedShifts = shifts.toShiftSummaries().sinceStart(window)
+        val allTxSummaries = txs.toSummaries()
+        val countedTxs = allTxSummaries.sinceStart(window, zone)
+        val earnedAgorot = GoalCalculator.earnedIn(countedShifts, month)
         val spentBefore = today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
-        val spentAgorot = GoalCalculator.spentIn(txs.toSummaries().sinceStart(window, zone), month, zone, spentBefore)
+        val spentAgorot = GoalCalculator.spentIn(countedTxs, month, zone, spentBefore)
         val earned = Money.toShekels(earnedAgorot)
+        // The same status the goal screen shows as its pill (the main job's rate only feeds the
+        // "hours missing" text there, not whether the month is on track).
+        val goalStatus = GoalCalculator.monthStatus(
+            shifts = countedShifts,
+            transactions = countedTxs,
+            month = month,
+            today = today,
+            zone = zone,
+            goalAgorot = settings.monthlySavingGoalAgorot,
+            mainRateAgorot = 0L,
+            startDate = window.startDate,
+        )
+        val ruleModels = rules.map { MerchantRuleModel(it.keyword, it.categoryId, it.origin == Origin.LEARNED) }
         HomeUiState(
             loading = false,
             month = month,
@@ -72,6 +98,8 @@ class HomeViewModel(graph: AppGraph) : ViewModel() {
             earnedThisMonth = earned,
             savedThisMonth = Money.toShekels(earnedAgorot - spentAgorot),
             smsCaptureConfigured = settings.smsSenders.isNotEmpty(),
+            goalOnTrack = goalStatus.onTrack,
+            unsortedMerchants = UnsortedMerchants.find(allTxSummaries, ruleModels).size,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState())
 }

@@ -13,7 +13,28 @@ import com.tamir.drift.data.settings.SettingsStore
 import com.tamir.drift.notify.BudgetAlertChecker
 import com.tamir.drift.notify.Notifier
 import com.tamir.drift.update.UpdateChecker
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
+
+/**
+ * One short line for the user, shown by the root of the UI. With [actionLabel] and [action] the
+ * line carries a link ("ביטול") that runs the action — the undo of what the message reports.
+ */
+class UiMessage(
+    val text: String,
+    val actionLabel: String? = null,
+    val action: (suspend () -> Unit)? = null,
+    val durationMillis: Long = DEFAULT_MILLIS,
+) {
+    companion object {
+        const val DEFAULT_MILLIS = 3_500L
+
+        /** How long a message with an undo link stays. */
+        const val UNDO_MILLIS = 6_000L
+    }
+}
 
 /** Simple manual dependency graph; one instance per process. */
 class AppGraph private constructor(val appContext: Context) {
@@ -35,10 +56,21 @@ class AppGraph private constructor(val appContext: Context) {
      * Short one-line messages for the user ("עודכנו 3 הוצאות של …"); the root of the UI shows each
      * for a few seconds. A screen may emit and leave — the message outlives it.
      */
-    val messages: MutableSharedFlow<String> = MutableSharedFlow(extraBufferCapacity = 8)
+    val messages: MutableSharedFlow<UiMessage> = MutableSharedFlow(extraBufferCapacity = 8)
+
+    /**
+     * For work that has to finish after the screen that started it is gone: a save or a delete
+     * followed by leaving the screen, and the undo that the root message runs later.
+     */
+    val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     fun showMessage(text: String) {
-        messages.tryEmit(text)
+        messages.tryEmit(UiMessage(text))
+    }
+
+    /** A message with an undo link: "נמחק · ביטול". [undo] runs when the link is tapped. */
+    fun showUndoMessage(text: String, actionLabel: String, undo: suspend () -> Unit) {
+        messages.tryEmit(UiMessage(text, actionLabel, undo, UiMessage.UNDO_MILLIS))
     }
 
     companion object {

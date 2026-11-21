@@ -64,19 +64,27 @@ import com.tamir.drift.ui.driftViewModel
 import com.tamir.drift.ui.format.Fmt
 import com.tamir.drift.ui.theme.DriftColors
 import com.tamir.drift.ui.theme.DriftType
+import java.time.DayOfWeek
 import java.time.LocalDate
 
-/** PRD "מסך עבודה". */
+/**
+ * PRD "מסך עבודה".
+ *
+ * The calendar: a tap on a day with shifts lists them (also when there is only one) with the
+ * day total, each opening for editing, and "הוספת משמרת ליום הזה". A past day without a shift
+ * opens a new shift on that date; today without one offers that and "סמן כמתוכנן"; a future day
+ * is marked / unmarked as planned. A day with a shift never wears the planned ring.
+ */
 @Composable
-fun WorkScreen(onAddShift: () -> Unit, onEditShift: (Long) -> Unit, onOpenAllShifts: () -> Unit) {
+fun WorkScreen(onAddShift: () -> Unit, onAddShiftOn: (LocalDate) -> Unit, onEditShift: (Long) -> Unit, onOpenAllShifts: () -> Unit) {
     val graph = LocalAppGraph.current
     val vm = driftViewModel { WorkViewModel(graph) }
     val state by vm.state.collectAsStateWithLifecycle()
 
     var showNewJob by remember { mutableStateOf(false) }
     var editingJob by remember { mutableStateOf<JobEntity?>(null) }
-    // A calendar day with several shifts: the user picks which one to open.
-    var dayShifts by remember { mutableStateOf<List<ShiftEntity>?>(null) }
+    // The calendar day whose sheet is open: its shifts, or — for today without one — what to do with it.
+    var openDay by remember { mutableStateOf<LocalDate?>(null) }
 
     LazyColumn(
         Modifier.fillMaxSize().statusBarsPadding(),
@@ -160,13 +168,16 @@ fun WorkScreen(onAddShift: () -> Unit, onEditShift: (Long) -> Unit, onOpenAllShi
                         plannedDays = state.plannedDays,
                         today = state.today,
                         onDayClick = { date ->
-                            // A day with a shift opens it (several → a short list to pick from);
-                            // a day without one is marked / unmarked as planned.
                             val shifts = state.shiftsByDay[date.toEpochDay()].orEmpty()
                             when {
-                                shifts.isEmpty() -> vm.togglePlanned(date)
-                                shifts.size == 1 -> onEditShift(shifts.first().id)
-                                else -> { dayShifts = shifts }
+                                // A day with shifts shows them — one or several, always the same list.
+                                shifts.isNotEmpty() -> { openDay = date }
+                                // A future day can only be planned.
+                                date.isAfter(state.today) -> vm.togglePlanned(date)
+                                // Today: add the shift, or mark the day as planned.
+                                date == state.today -> { openDay = date }
+                                // A past day without a shift: add it, on that date.
+                                else -> onAddShiftOn(date)
                             }
                         },
                         onPrevMonth = { vm.previousMonth() },
@@ -275,30 +286,69 @@ fun WorkScreen(onAddShift: () -> Unit, onEditShift: (Long) -> Unit, onOpenAllShi
             vm.updateJob(job, name, payType, rate, mult, travel, main); editingJob = null
         }
     }
-    dayShifts?.let { shifts ->
+    openDay?.let { day ->
+        val shifts = state.shiftsByDay[day.toEpochDay()].orEmpty()
         DriftDialog(
-            title = Fmt.fullDate(LocalDate.ofEpochDay(shifts.first().date)),
-            onDismiss = { dayShifts = null },
-            confirmText = stringResource(R.string.cancel),
-            onConfirm = { dayShifts = null },
+            title = dayTitle(day),
+            onDismiss = { openDay = null },
+            confirmText = stringResource(R.string.close),
+            onConfirm = { openDay = null },
         ) {
             shifts.forEach { shift ->
-                ShiftRow(shift, state.jobsById[shift.jobId], onClick = { dayShifts = null; onEditShift(shift.id) })
+                ShiftRow(shift, state.jobsById[shift.jobId], onClick = { openDay = null; onEditShift(shift.id) }, showDate = false)
+            }
+            if (shifts.isNotEmpty()) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 2.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text(stringResource(R.string.shift_total_day), style = DriftType.Label12, color = DriftColors.TextSecondary, maxLines = 1)
+                    Text(
+                        stringResource(R.string.amount_with_shekel, Fmt.moneyExact(shifts.sumOf { it.totalAgorot })),
+                        style = DriftType.RowAmount, color = DriftColors.Text, maxLines = 1,
+                    )
+                }
+            }
+            DayAction(stringResource(R.string.work_day_add_shift), DriftColors.Lime) { openDay = null; onAddShiftOn(day) }
+            // Planning is for a day that has no shift yet; of the days that open this sheet, that is today.
+            if (shifts.isEmpty() && day == state.today) {
+                val planned = day.toEpochDay() in state.plannedDays
+                DayAction(
+                    stringResource(if (planned) R.string.work_day_unmark_planned else R.string.work_day_mark_planned),
+                    DriftColors.TextSecondary,
+                ) { vm.togglePlanned(day); openDay = null }
             }
         }
     }
 }
 
+/** "יום ה׳ · 19.11" — the title of a calendar day's sheet. */
+@Composable
+private fun dayTitle(date: LocalDate): String {
+    val shortDate = Fmt.shortDate(date)
+    if (date.dayOfWeek == DayOfWeek.SATURDAY) return stringResource(R.string.work_day_title_saturday, shortDate)
+    // Sunday → 0 … Friday → 5, like the calendar's columns.
+    val initials = LocalContext.current.resources.getStringArray(R.array.day_initials)
+    return stringResource(R.string.work_day_title, initials[date.dayOfWeek.value % 7], shortDate)
+}
+
+/** One text action of a calendar day's sheet. */
+@Composable
+private fun DayAction(text: String, color: Color, onClick: () -> Unit) {
+    Text(
+        text, style = DriftType.RowTitle, color = color, maxLines = 1, overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick).padding(vertical = 8.dp, horizontal = 2.dp),
+    )
+}
+
 /**
  * "job · date · hours · שבת" row with the shift's income (wage + travel), reusing the transaction
  * row shape. A daily job shows "יום" instead of hours; a shift with travel gets a "כולל נסיעות" tag.
+ * [showDate] off leaves the date out (a list that is already about one day).
  */
 @Composable
-fun ShiftRow(shift: ShiftEntity, job: JobEntity?, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun ShiftRow(shift: ShiftEntity, job: JobEntity?, onClick: () -> Unit, modifier: Modifier = Modifier, showDate: Boolean = true) {
     val date = LocalDate.ofEpochDay(shift.date)
     val daily = job?.isDaily == true
     val meta = buildList {
-        add(Fmt.shortDate(date))
+        if (showDate) add(Fmt.shortDate(date))
         if (daily) {
             add(stringResource(R.string.work_shift_day))
         } else {

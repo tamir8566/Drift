@@ -34,8 +34,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -51,6 +53,7 @@ import com.tamir.drift.data.db.Origin
 import com.tamir.drift.data.settings.Settings
 import com.tamir.drift.domain.money.AmountInput
 import com.tamir.drift.domain.money.Currencies
+import com.tamir.drift.domain.work.ShiftCalculator
 import com.tamir.drift.notify.WeeklySummaryScheduler
 import com.tamir.drift.notify.WorkSummaryScheduler
 import com.tamir.drift.ui.LocalAppGraph
@@ -59,6 +62,7 @@ import com.tamir.drift.ui.components.DateField
 import com.tamir.drift.ui.components.DriftDialog
 import com.tamir.drift.ui.components.DriftTextField
 import com.tamir.drift.ui.components.EmptyNote
+import com.tamir.drift.ui.components.FocusOnOpen
 import com.tamir.drift.ui.components.GlassCard
 import com.tamir.drift.ui.components.HairlineDivider
 import com.tamir.drift.ui.components.ScreenHeader
@@ -379,16 +383,20 @@ private fun FxRateDialog(code: String, currentAgorot: Long, onDismiss: () -> Uni
     var text by remember { mutableStateOf(if (currentAgorot > 0L) Fmt.fieldAmount(currentAgorot) else "") }
     val value = AmountInput.parse(text)
     val valid = value != null && value > 0.0
+    val focus = remember { FocusRequester() }
+    val confirm: () -> Unit = { if (value != null && value > 0.0) onSave(com.tamir.drift.data.repo.Money.toAgorot(value)) }
     DriftDialog(
         currencyName(code), onDismiss, stringResource(R.string.save),
-        onConfirm = { if (value != null && value > 0.0) onSave(com.tamir.drift.data.repo.Money.toAgorot(value)) },
+        onConfirm = confirm,
         dismissText = stringResource(R.string.cancel), confirmEnabled = valid,
     ) {
         DriftTextField(
             text, { text = it }, stringResource(R.string.settings_fx_field), keyboardType = KeyboardType.Decimal,
             isError = text.isNotBlank() && !valid,
             supporting = if (text.isNotBlank() && !valid) stringResource(R.string.add_invalid_amount) else null,
+            imeAction = ImeAction.Done, onImeAction = confirm, focusRequester = focus, selectAllOnFocus = true,
         )
+        FocusOnOpen(focus)
         Text(stringResource(R.string.settings_fx_desc), style = DriftType.Label12, color = DriftColors.TextSecondary)
     }
 }
@@ -449,19 +457,25 @@ private fun WeeklyDialog(s: Settings, onDismiss: () -> Unit, onSave: (Int, Int, 
     val context = LocalContext.current
     var day by remember { mutableIntStateOf(s.weeklySummaryDay) }
     var time by remember { mutableStateOf(Fmt.clock(s.weeklySummaryHour, s.weeklySummaryMinute)) }
-    val parsed = time.split(':').takeIf { it.size == 2 }?.let { p ->
-        val h = p[0].trim().toIntOrNull(); val m = p[1].trim().toIntOrNull()
-        if (h != null && m != null && h in 0..23 && m in 0..59) h to m else null
-    }
+    // The same typed forms as a shift's times: "1730" / "930" / "9" / "17.30" / "17:30".
+    val minuteOfDay: Int? = ShiftCalculator.parseClock(time)
+    val confirm: () -> Unit = { if (minuteOfDay != null) onSave(day, minuteOfDay / 60, minuteOfDay % 60) }
     DriftDialog(
         stringResource(R.string.settings_weekly), onDismiss, stringResource(R.string.save),
-        onConfirm = { parsed?.let { onSave(day, it.first, it.second) } },
-        dismissText = stringResource(R.string.cancel), confirmEnabled = parsed != null,
+        onConfirm = confirm,
+        dismissText = stringResource(R.string.cancel), confirmEnabled = minuteOfDay != null,
     ) {
         // Sunday first (Israeli week).
         val days = listOf(DayOfWeek.SUNDAY, DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY, DayOfWeek.THURSDAY, DayOfWeek.FRIDAY, DayOfWeek.SATURDAY)
         ChoiceRow(days.map { it.value.toString() to Fmt.dayName(context, it) }, day.toString(), onSelect = { day = it.toInt() })
-        DriftTextField(time, { time = it }, stringResource(R.string.settings_time), keyboardType = KeyboardType.Number, placeholder = "09:00")
+        DriftTextField(
+            time, { time = it }, stringResource(R.string.settings_time), keyboardType = KeyboardType.Number, placeholder = "09:00",
+            isError = time.isNotBlank() && minuteOfDay == null,
+            supporting = if (time.isNotBlank() && minuteOfDay == null) stringResource(R.string.shift_invalid_time) else null,
+            imeAction = ImeAction.Done, onImeAction = confirm,
+            // Shown as HH:mm once the field is left.
+            onFocusLost = { ShiftCalculator.normalizeClock(time)?.let { time = it } },
+        )
     }
 }
 

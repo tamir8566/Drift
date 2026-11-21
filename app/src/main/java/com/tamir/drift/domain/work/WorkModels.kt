@@ -58,6 +58,9 @@ data class ShiftSummary(
     val isShabbatRate: Boolean = false,
     /** Travel reimbursement applied to this shift, agorot; kept apart from the wage. */
     val travelAgorot: Long = 0L,
+    /** Minutes from midnight when the shift was entered as start / end; null when entered as hours. */
+    val startMinute: Int? = null,
+    val endMinute: Int? = null,
 ) {
     /** The shift's income: wage + travel reimbursement. Every income sum uses this. */
     val totalAgorot: Long get() = amountAgorot + travelAgorot

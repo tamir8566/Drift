@@ -19,6 +19,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -56,12 +57,17 @@ import com.tamir.drift.ui.theme.DriftColors
 import com.tamir.drift.ui.theme.DriftType
 import kotlinx.coroutines.launch
 
+/** What the capture processor puts between the texts of two sources merged into one expense. */
+private const val MERGED_TEXT_SEPARATOR = "\n\n---\n\n"
+
 /**
  * PRD "כיול": paste a real message, see how it parses, select the amount / merchant in the
  * text and save a pattern that the parser tries first from now on.
+ * With [prefillTransactionId] ("למד תבנית מההודעה הזו" in an expense's details) the screen opens
+ * with that expense's raw captured text and its source already filled in.
  */
 @Composable
-fun CalibrationScreen(onBack: () -> Unit) {
+fun CalibrationScreen(onBack: () -> Unit, prefillTransactionId: Long? = null) {
     val graph = LocalAppGraph.current
     val scope = rememberCoroutineScope()
     val patterns by graph.db.parsePatterns().observeAll().collectAsStateWithLifecycle(initialValue = emptyList())
@@ -72,6 +78,21 @@ fun CalibrationScreen(onBack: () -> Unit) {
     var amountMark by remember { mutableStateOf<String?>(null) }
     var merchantMark by remember { mutableStateOf<String?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(prefillTransactionId) {
+        val prefillId = prefillTransactionId ?: return@LaunchedEffect
+        val tx = graph.transactions.get(prefillId) ?: return@LaunchedEffect
+        val raw = tx.rawText
+        if (!raw.isNullOrBlank() && field.text.isBlank()) {
+            // An expense merged from two sources keeps both texts; the pattern is learned from the first.
+            field = TextFieldValue(raw.substringBefore(MERGED_TEXT_SEPARATOR).trim())
+            if (tx.source == TransactionSource.GPAY.name) {
+                source = TransactionSource.GPAY
+            } else if (tx.source == TransactionSource.SMS.name) {
+                source = TransactionSource.SMS
+            }
+        }
+    }
 
     val userPatterns = patterns.map { UserPattern(it.id, it.amountRegex, it.source?.let { s -> runCatching { TransactionSource.valueOf(s) }.getOrNull() }) }
     val parsed = remember(field.text, source, patterns) {

@@ -138,14 +138,13 @@
     <string name="detail_source">מקור</string>
     <string name="detail_card">כרטיס</string>
     <string name="detail_card_last4">מסתיים ב־%1$s</string>
-    <string name="detail_delete_confirm">למחוק את ההוצאה?</string>
     <string name="detail_not_found">ההוצאה לא נמצאה</string>
     <string name="detail_full_amount">סכום מלא</string>
     <string name="detail_complete_unparsed">השלם סכום ובית עסק כדי שההוצאה תיכנס לחישובים</string>
 
     <!-- All transactions -->
     <string name="tx_title">כל ההוצאות</string>
-    <string name="tx_search_hint">חיפוש לפי בית עסק או הערה</string>
+    <string name="tx_search_hint">חיפוש לפי בית עסק, סכום או הערה</string>
     <string name="tx_filter_category">קטגוריה</string>
     <string name="tx_filter_month">חודש</string>
     <string name="tx_all_categories">כל הקטגוריות</string>
@@ -296,7 +295,7 @@
     <string name="work_this_week">השבוע</string>
     <string name="work_hours_month">שעות החודש</string>
     <string name="work_hours_value">%1$s שע׳</string>
-    <string name="work_calendar_hint">לחיצה על יום עם משמרת פותחת אותה · יום בלי משמרת מסומן או מבוטל כיום עבודה מתוכנן</string>
+    <string name="work_calendar_hint">לחיצה על יום מציגה את המשמרות שלו · יום עתידי: סימון כמתוכנן</string>
     <string name="work_legend_worked">עבדתי</string>
     <string name="work_legend_planned">מתוכנן</string>
     <string name="work_prev_month">חודש קודם</string>
@@ -335,7 +334,6 @@
     <string name="work_job_no_travel">ללא נסיעות</string>
     <string name="work_job_deactivate">השבתה</string>
     <string name="work_job_activate">הפעלה</string>
-    <string name="work_delete_shift_confirm">למחוק את המשמרת?</string>
 
     <string name="shift_title">משמרת חדשה</string>
     <string name="shift_edit_title">עריכת משמרת</string>
@@ -363,7 +361,7 @@
     <string name="shift_breakdown">שכר %1$s ₪ + נסיעות %2$s ₪</string>
     <string name="shift_wage">שכר</string>
     <string name="shift_note">הערה</string>
-    <string name="shift_invalid_time">שעה לא תקינה (שעה:דקות)</string>
+    <string name="shift_invalid_time">שעה לא תקינה (למשל 1730 או 17:30)</string>
     <string name="shift_invalid_hours">צריך מספר שעות גדול מאפס</string>
     <string name="shift_no_jobs">אין עבודה פעילה. מוסיפים עבודה במסך עבודה.</string>
     <string name="shift_not_found">המשמרת לא נמצאה</string>
@@ -457,7 +455,6 @@
     <string name="recat_message_one">עודכנה הוצאה אחת נוספת של %1$s</string>
     <string name="recat_message_many">עודכנו %1$d הוצאות של %2$s</string>
     <string name="tx_unparsed_only">רק לא פוענחו</string>
-    <string name="tx_unparsed_only_hint">לחיצה מציגה את כל ההוצאות</string>
 
     <string name="channel_reminders">תזכורות</string>
     <string name="channel_reminders_desc">בדיקת הקליטה האוטומטית ותזכורות שקטות</string>
@@ -474,6 +471,49 @@
     <string name="fx_usd">דולר ($)</string>
     <string name="fx_eur">אירו (€)</string>
     <string name="fx_gbp">לירה שטרלינג (£)</string>
+
+    <!-- Speed round (batch B) -->
+    <string name="close">סגירה</string>
+    <string name="day_before_yesterday">שלשום</string>
+    <string name="date_pick">בחירת תאריך</string>
+    <string name="unsaved_title">לצאת בלי לשמור?</string>
+    <string name="unsaved_text">השינויים שעשית לא יישמרו.</string>
+    <string name="unsaved_leave">יציאה</string>
+    <string name="tx_deleted">ההוצאה נמחקה</string>
+    <string name="shift_deleted">המשמרת נמחקה</string>
+    <string name="shift_saved_message">נשמרה משמרת · %1$s ₪</string>
+    <string name="tx_saved_message">נשמרה הוצאה · %1$s ₪</string>
+    <string name="add_menu_same_as_last">כמו בפעם הקודמת</string>
+    <string name="share_half">חצי</string>
+    <string name="share_third">שליש</string>
+    <string name="share_quarter">רבע</string>
+    <string name="share_none">לא</string>
+    <string name="quick_kind">סוג</string>
+    <string name="detail_raw_show">הצגה</string>
+    <string name="detail_raw_hide">הסתרה</string>
+    <string name="detail_learn_pattern">למד תבנית מההודעה הזו</string>
+    <string name="tx_filter_button">סינון</string>
+    <string name="tx_more_months">עוד</string>
+    <string name="tx_summary">%1$d הוצאות · %2$s ₪ · ממוצע %3$s ₪</string>
+    <string name="tx_summary_one">הוצאה אחת · %1$s ₪</string>
+    <string name="tx_summary_before_start">כולל לפני תחילת המעקב</string>
+    <string name="home_edit_budget">עריכת תקציב</string>
+    <string name="home_unsorted_one">בית עסק אחד מחכה לסיווג</string>
+    <string name="home_unsorted_many">%1$d בתי עסק מחכים לסיווג</string>
+    <string name="home_unsorted_action">לסווג</string>
+    <string name="unsorted_title">בתי עסק לסיווג</string>
+    <string name="unsorted_hint">לחיצה על קטגוריה מסווגת את כל ההוצאות של בית העסק, אלה שהיו ואלה שיבואו. הבחירה ״באמת אחר״ משאירה אותו באחר ומורידה אותו מהרשימה.</string>
+    <string name="unsorted_empty">אין בתי עסק שמחכים לסיווג</string>
+    <string name="unsorted_really_other">באמת אחר</string>
+    <string name="unsorted_count_one">הוצאה אחת</string>
+    <string name="unsorted_count_many">%1$d הוצאות</string>
+    <string name="unsorted_kept_other">%1$s נשאר באחר</string>
+    <string name="unsorted_moved_one">עודכנה הוצאה אחת של %1$s</string>
+    <string name="work_day_title">יום %1$s׳ · %2$s</string>
+    <string name="work_day_title_saturday">שבת · %1$s</string>
+    <string name="work_day_add_shift">הוספת משמרת ליום הזה</string>
+    <string name="work_day_mark_planned">סמן כמתוכנן</string>
+    <string name="work_day_unmark_planned">בטל את הסימון כמתוכנן</string>
 
     <string-array name="day_initials">
         <item>א</item><item>ב</item><item>ג</item><item>ד</item><item>ה</item><item>ו</item><item>ש</item>

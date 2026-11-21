@@ -1,31 +1,27 @@
 package com.tamir.drift.ui.screens.detail
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -37,20 +33,24 @@ import com.tamir.drift.data.repo.Money
 import com.tamir.drift.domain.model.TxnKind
 import com.tamir.drift.domain.money.AmountInput
 import com.tamir.drift.ui.LocalAppGraph
+import com.tamir.drift.ui.announceRecategorized
 import com.tamir.drift.ui.components.ChoiceRow
 import com.tamir.drift.ui.components.DateField
-import com.tamir.drift.ui.components.DriftDialog
 import com.tamir.drift.ui.components.DriftIcons
 import com.tamir.drift.ui.components.DriftTextField
 import com.tamir.drift.ui.components.EmptyNote
+import com.tamir.drift.ui.components.FocusOnOpen
+import com.tamir.drift.ui.components.FormScreen
 import com.tamir.drift.ui.components.GlassCard
 import com.tamir.drift.ui.components.GlassIconButton
 import com.tamir.drift.ui.components.PrimaryButton
 import com.tamir.drift.ui.components.ScreenHeader
-import com.tamir.drift.ui.components.SwitchRow
+import com.tamir.drift.ui.components.ShareSection
+import com.tamir.drift.ui.components.UnsavedChangesDialog
 import com.tamir.drift.ui.components.parseDate
 import com.tamir.drift.ui.components.sourceName
 import com.tamir.drift.ui.components.toFieldText
+import com.tamir.drift.ui.deleteTransactionWithUndo
 import com.tamir.drift.ui.format.Fmt
 import com.tamir.drift.ui.theme.DriftColors
 import com.tamir.drift.ui.theme.DriftType
@@ -66,13 +66,18 @@ import java.time.ZoneId
  * is left out of every calculation. A foreign charge shows its original amount; its shekel amount
  * is an estimate ("≈") until the user types the final one or confirms it.
  * When a category change also moved other expenses of the same merchant, the user is told how many.
+ *
+ * An item that could not be parsed shows its raw captured text at the top — to read and type in
+ * place, with the amount field focused — and "למד תבנית מההודעה הזו" opens the calibration screen
+ * with that text; for a parsed item the raw text waits, folded, at the bottom.
+ * "שמירה" is pinned under the form; deleting happens at once with an undo in the root message;
+ * leaving with edits asks "לצאת בלי לשמור?".
  */
 @Composable
-fun TransactionDetailScreen(id: Long, onBack: () -> Unit) {
+fun TransactionDetailScreen(id: Long, onBack: () -> Unit, onOpenCalibration: (Long) -> Unit) {
     val graph = LocalAppGraph.current
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val tx by graph.transactions.observe(id).collectAsStateWithLifecycle(initialValue = null)
+    val txFlow = remember(id) { graph.transactions.observe(id) }
+    val tx by txFlow.collectAsStateWithLifecycle(initialValue = null)
     val categories by graph.categories.categories.collectAsStateWithLifecycle(initialValue = emptyList())
 
     val current = tx
@@ -83,22 +88,29 @@ fun TransactionDetailScreen(id: Long, onBack: () -> Unit) {
         }
         return
     }
-    DetailForm(current, categories.map { it.id to it.name }, onBack = onBack, onDelete = {
-        scope.launch { graph.transactions.delete(id); onBack() }
-    }, onSave = { updated, categoryChanged ->
-        scope.launch {
-            if (categoryChanged) {
-                // The same merchant's other expenses follow the new category — say so, with the number.
-                val moved = graph.transactions.recategorize(updated, updated.categoryId)
-                if (moved == 1) graph.showMessage(context.getString(R.string.recat_message_one, updated.merchant))
-                else if (moved > 1) graph.showMessage(context.getString(R.string.recat_message_many, moved, updated.merchant))
-            } else {
-                graph.transactions.update(updated)
-            }
-            graph.alertChecker.checkAndNotify()
+    DetailForm(
+        current, categories.map { it.id to it.name }, onBack = onBack,
+        onDelete = {
+            // Deleted at once; the root message offers "ביטול", which writes the same row back.
+            graph.deleteTransactionWithUndo(current)
             onBack()
-        }
-    })
+        },
+        onSave = { updated, categoryChanged ->
+            // On the app scope: the write finishes although the screen closes right away.
+            graph.scope.launch {
+                if (categoryChanged) {
+                    // The same merchant's other expenses follow the new category — say so, with the number.
+                    val moved = graph.transactions.recategorize(updated, updated.categoryId)
+                    graph.announceRecategorized(moved, updated.merchant)
+                } else {
+                    graph.transactions.update(updated)
+                }
+                graph.alertChecker.checkAndNotify()
+            }
+            onBack()
+        },
+        onOpenCalibration = { onOpenCalibration(id) },
+    )
 }
 
 @Composable
@@ -108,9 +120,12 @@ private fun DetailForm(
     onBack: () -> Unit,
     onDelete: () -> Unit,
     onSave: (TransactionEntity, Boolean) -> Unit,
+    onOpenCalibration: () -> Unit,
 ) {
     val zone = ZoneId.systemDefault()
     val initialAmount = remember(tx.id) { if (tx.isUnparsed) "" else Fmt.fieldAmount(tx.amountFull) }
+    val initialDate = remember(tx.id) { Instant.ofEpochMilli(tx.timestamp).atZone(zone).toLocalDate().toFieldText() }
+    val initialMine = remember(tx.id) { if (tx.isShared) Fmt.fieldAmount(tx.amountMine) else "" }
     var amount by remember(tx.id) { mutableStateOf(initialAmount) }
     var kind by remember(tx.id) { mutableStateOf(tx.txnKind) }
     // The shekel amount of a foreign charge stays an estimate until it is typed over or confirmed.
@@ -118,11 +133,15 @@ private fun DetailForm(
     val stillEstimate = tx.isEstimate && !estimateConfirmed && amount == initialAmount
     var merchant by remember(tx.id) { mutableStateOf(tx.merchant) }
     var categoryId by remember(tx.id) { mutableStateOf(tx.categoryId) }
-    var date by remember(tx.id) { mutableStateOf(Instant.ofEpochMilli(tx.timestamp).atZone(zone).toLocalDate().toFieldText()) }
+    var date by remember(tx.id) { mutableStateOf(initialDate) }
     var note by remember(tx.id) { mutableStateOf(tx.note.orEmpty()) }
     var shared by remember(tx.id) { mutableStateOf(tx.isShared) }
-    var mine by remember(tx.id) { mutableStateOf(if (tx.isShared) Fmt.fieldAmount(tx.amountMine) else "") }
-    var confirmDelete by remember { mutableStateOf(false) }
+    var mine by remember(tx.id) { mutableStateOf(initialMine) }
+    var rawExpanded by remember(tx.id) { mutableStateOf(false) }
+    var askLeave by remember { mutableStateOf(false) }
+    // Set once the form is being saved or deleted, so a second tap cannot repeat it.
+    var closing by remember { mutableStateOf(false) }
+    val amountFocus = remember { FocusRequester() }
 
     val amountValue = AmountInput.parse(amount)
     val mineValue = AmountInput.parse(mine)
@@ -132,19 +151,53 @@ private fun DetailForm(
     // An empty "my share" is simply not filled in yet — no error until something was typed.
     val shareError = shared && mine.isNotBlank() && !shareOk
     val valid = amountOk && shareOk && dateValue != null
+    val dirty = amount != initialAmount || kind != tx.txnKind || estimateConfirmed || merchant != tx.merchant ||
+        categoryId != tx.categoryId || date != initialDate || note != tx.note.orEmpty() || shared != tx.isShared || mine != initialMine
 
-    Column(
-        Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 22.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+    fun save() {
+        if (!valid || closing) return
+        val full = Money.toAgorot(amountValue ?: return)
+        val my = if (shared) Money.toAgorot(mineValue ?: return) else full
+        val day = dateValue ?: return
+        val oldDate = Instant.ofEpochMilli(tx.timestamp).atZone(zone)
+        val ts = if (day == oldDate.toLocalDate()) tx.timestamp
+        else day.atTime(oldDate.toLocalTime()).atZone(zone).toInstant().toEpochMilli()
+        val updated = tx.copy(
+            amountFull = full,
+            amountMine = my,
+            isShared = shared,
+            merchant = merchant.trim(),
+            categoryId = categoryId,
+            timestamp = ts,
+            note = note.takeIf { it.isNotBlank() },
+            isUnparsed = false,
+            kind = kind.name,
+            isEstimate = stillEstimate,
+        )
+        closing = true
+        onSave(updated, categoryId != tx.categoryId && merchant.trim().isNotBlank())
+    }
+
+    val leave: () -> Unit = { if (dirty && !closing) { askLeave = true } else { onBack() } }
+    BackHandler(enabled = dirty && !askLeave && !closing) { askLeave = true }
+
+    FormScreen(
+        bottom = { PrimaryButton(stringResource(R.string.save), enabled = valid && !closing, onClick = { save() }) },
     ) {
-        ScreenHeader(stringResource(R.string.detail_title), onBack = onBack, backDescription = stringResource(R.string.nav_back)) {
-            GlassIconButton(DriftIcons.Trash, stringResource(R.string.delete), { confirmDelete = true }, tint = DriftColors.Orange)
+        ScreenHeader(stringResource(R.string.detail_title), onBack = leave, backDescription = stringResource(R.string.nav_back)) {
+            GlassIconButton(DriftIcons.Trash, stringResource(R.string.delete), {
+                if (!closing) {
+                    closing = true
+                    onDelete()
+                }
+            }, tint = DriftColors.Orange)
         }
 
+        val rawText = tx.rawText
         if (tx.isUnparsed) {
             Text(stringResource(R.string.detail_complete_unparsed), style = DriftType.Label12, color = DriftColors.Orange)
+            // Not parsed: the message itself comes first, so it is read and typed from in place.
+            if (!rawText.isNullOrBlank()) RawTextCard(rawText, onLearnPattern = onOpenCalibration)
         }
 
         // Read-only meta
@@ -200,75 +253,75 @@ private fun DetailForm(
                 stillEstimate -> stringResource(R.string.detail_estimate_hint)
                 else -> null
             },
+            imeAction = ImeAction.Next, focusRequester = amountFocus,
         )
+        // Only an item that still lacks its amount opens with the keyboard up.
+        FocusOnOpen(amountFocus, enabled = tx.isUnparsed)
         if (stillEstimate) {
             Text(
                 stringResource(R.string.detail_estimate_confirm), style = DriftType.Link12, color = DriftColors.Lime,
                 modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable { estimateConfirmed = true }.padding(vertical = 4.dp),
             )
         }
-        DriftTextField(merchant, { merchant = it }, stringResource(R.string.add_merchant))
+        DriftTextField(merchant, { merchant = it }, stringResource(R.string.add_merchant), imeAction = ImeAction.Next)
 
         Text(stringResource(R.string.add_category), style = DriftType.Label12, color = DriftColors.TextSecondary)
         ChoiceRow(categoryOptions, categoryId, onSelect = { categoryId = it })
 
-        DateField(date, { date = it }, stringResource(R.string.add_date), errorText = stringResource(R.string.date_invalid))
-        DriftTextField(note, { note = it }, stringResource(R.string.add_note), singleLine = false, minLines = 2)
+        DateField(date, { date = it }, stringResource(R.string.add_date), errorText = stringResource(R.string.date_invalid), imeAction = ImeAction.Next)
+        // "Done" on the last field saves (when the form is valid): the note, or the share under it.
+        DriftTextField(
+            note, { note = it }, stringResource(R.string.add_note), singleLine = false, minLines = 2,
+            imeAction = if (shared) ImeAction.Next else ImeAction.Done, onImeAction = { save() },
+        )
 
-        SwitchRow(stringResource(R.string.add_shared), shared, { on ->
-            shared = on
-            // Turning it on suggests half of the amount as my share (still editable).
-            if (on && mine.isBlank() && amountValue != null && amountValue > 0) mine = Fmt.fieldAmount(Money.toAgorot(amountValue / 2))
-        })
-        if (shared) {
-            DriftTextField(
-                mine, { mine = it }, stringResource(R.string.add_paid_actually), keyboardType = KeyboardType.Decimal,
-                isError = shareError, supporting = if (shareError) stringResource(R.string.add_invalid_share) else null,
-            )
-        }
+        ShareSection(
+            shared = shared,
+            onSharedChange = { shared = it },
+            mine = mine,
+            onMineChange = { mine = it },
+            amountValue = amountValue,
+            isError = shareError,
+            onDone = { save() },
+        )
 
-        if (!tx.rawText.isNullOrBlank()) {
-            Text(stringResource(R.string.detail_raw_text), style = DriftType.Label12, color = DriftColors.TextSecondary)
-            GlassCard(Modifier.fillMaxWidth(), radius = 16.dp) {
+        // Parsed: the raw captured text stays out of the way, folded at the bottom.
+        if (!tx.isUnparsed && !rawText.isNullOrBlank()) {
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { rawExpanded = !rawExpanded }.padding(vertical = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(stringResource(R.string.detail_raw_text), style = DriftType.Label12, color = DriftColors.TextSecondary)
                 Text(
-                    tx.rawText, style = DriftType.Label12, color = DriftColors.TextSecondary,
-                    modifier = Modifier.padding(12.dp), maxLines = 20, overflow = TextOverflow.Ellipsis,
+                    stringResource(if (rawExpanded) R.string.detail_raw_hide else R.string.detail_raw_show),
+                    style = DriftType.Link12, color = DriftColors.Lime,
                 )
             }
+            if (rawExpanded) RawTextCard(rawText, onLearnPattern = onOpenCalibration)
         }
-
-        Spacer(Modifier.height(4.dp))
-        PrimaryButton(stringResource(R.string.save), enabled = valid, onClick = {
-            val full = Money.toAgorot(amountValue ?: return@PrimaryButton)
-            val my = if (shared) Money.toAgorot(mineValue ?: return@PrimaryButton) else full
-            val day = dateValue ?: return@PrimaryButton
-            val oldDate = Instant.ofEpochMilli(tx.timestamp).atZone(zone)
-            val ts = if (day == oldDate.toLocalDate()) tx.timestamp
-            else day.atTime(oldDate.toLocalTime()).atZone(zone).toInstant().toEpochMilli()
-            val updated = tx.copy(
-                amountFull = full,
-                amountMine = my,
-                isShared = shared,
-                merchant = merchant.trim(),
-                categoryId = categoryId,
-                timestamp = ts,
-                note = note.takeIf { it.isNotBlank() },
-                isUnparsed = false,
-                kind = kind.name,
-                isEstimate = stillEstimate,
-            )
-            onSave(updated, categoryId != tx.categoryId && merchant.trim().isNotBlank())
-        })
-        Spacer(Modifier.height(12.dp))
     }
 
-    if (confirmDelete) {
-        DriftDialog(
-            title = stringResource(R.string.delete),
-            onDismiss = { confirmDelete = false },
-            confirmText = stringResource(R.string.delete),
-            onConfirm = { confirmDelete = false; onDelete() },
-            dismissText = stringResource(R.string.cancel),
-        ) { Text(stringResource(R.string.detail_delete_confirm), style = DriftType.Body, color = DriftColors.TextSecondary) }
+    if (askLeave) {
+        UnsavedChangesDialog(
+            canSave = valid,
+            onSave = { askLeave = false; save() },
+            onLeave = { askLeave = false; onBack() },
+            onCancel = { askLeave = false },
+        )
+    }
+}
+
+/** The captured message as it arrived, and the link that teaches the parser a pattern from it. */
+@Composable
+private fun RawTextCard(text: String, onLearnPattern: () -> Unit) {
+    GlassCard(Modifier.fillMaxWidth(), radius = 16.dp) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(text, style = DriftType.Label12, color = DriftColors.TextSecondary, maxLines = 20, overflow = TextOverflow.Ellipsis)
+            Text(
+                stringResource(R.string.detail_learn_pattern), style = DriftType.Link12, color = DriftColors.Lime, maxLines = 1,
+                modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable(onClick = onLearnPattern).padding(vertical = 4.dp),
+            )
+        }
     }
 }

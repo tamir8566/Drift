@@ -165,6 +165,36 @@ class ShiftCalculatorTest {
     }
 
     @Test
+    fun `typed times without a separator are read as hours and minutes`() {
+        assertEquals(17 * 60 + 30, ShiftCalculator.parseClock("1730"))
+        assertEquals(9 * 60 + 30, ShiftCalculator.parseClock("930"))
+        assertEquals(9 * 60 + 30, ShiftCalculator.parseClock("0930"))
+        assertEquals(9 * 60, ShiftCalculator.parseClock("9"))
+        assertEquals(0, ShiftCalculator.parseClock("000"))
+        assertEquals(17 * 60 + 30, ShiftCalculator.parseClock("17 30"))
+        assertNull(ShiftCalculator.parseClock("2400"))
+        assertNull(ShiftCalculator.parseClock("1760"))
+        assertNull(ShiftCalculator.parseClock("12345"))
+        assertNull(ShiftCalculator.parseClock("-9"))
+        assertNull(ShiftCalculator.parseClock("+9"))
+        assertNull(ShiftCalculator.parseClock(""))
+        assertNull(ShiftCalculator.parseClock("9:30:00"))
+    }
+
+    @Test
+    fun `every accepted spelling of a time normalises to HH mm`() {
+        assertEquals("17:30", ShiftCalculator.normalizeClock("1730"))
+        assertEquals("09:30", ShiftCalculator.normalizeClock("930"))
+        assertEquals("09:00", ShiftCalculator.normalizeClock("9"))
+        assertEquals("17:30", ShiftCalculator.normalizeClock("17.30"))
+        assertEquals("17:30", ShiftCalculator.normalizeClock("17:30"))
+        assertEquals("17:30", ShiftCalculator.normalizeClock(" 17:30 "))
+        assertEquals("09:05", ShiftCalculator.normalizeClock("9:5"))
+        assertNull(ShiftCalculator.normalizeClock("25"))
+        assertNull(ShiftCalculator.normalizeClock("שעה"))
+    }
+
+    @Test
     fun `hours formatting drops trailing zeros`() {
         assertEquals("6", ShiftCalculator.formatHours(6.0))
         assertEquals("6.5", ShiftCalculator.formatHours(6.5))

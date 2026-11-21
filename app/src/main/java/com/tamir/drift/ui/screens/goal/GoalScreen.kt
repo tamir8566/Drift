@@ -23,9 +23,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -42,6 +44,7 @@ import com.tamir.drift.ui.components.DateField
 import com.tamir.drift.ui.components.DriftDialog
 import com.tamir.drift.ui.components.DriftTextField
 import com.tamir.drift.ui.components.EmptyNote
+import com.tamir.drift.ui.components.FocusOnOpen
 import com.tamir.drift.ui.components.GlassCard
 import com.tamir.drift.ui.components.HairlineDivider
 import com.tamir.drift.ui.components.SavingHistoryBars
@@ -353,15 +356,26 @@ fun GoalScreen() {
     depositFor?.let { g ->
         var text by remember { mutableStateOf("") }
         val value = AmountInput.parse(text)
+        val depositFocus = remember { FocusRequester() }
+        val confirmDeposit: () -> Unit = {
+            if (value != null && value > 0) {
+                vm.deposit(g.id, value)
+                depositFor = null
+            }
+        }
         DriftDialog(
             title = "${stringResource(R.string.savings_deposit)} · ${g.name}",
             onDismiss = { depositFor = null },
             confirmText = stringResource(R.string.save),
-            onConfirm = { if (value != null && value > 0) vm.deposit(g.id, value); depositFor = null },
+            onConfirm = confirmDeposit,
             dismissText = stringResource(R.string.cancel),
             confirmEnabled = value != null && value > 0,
         ) {
-            DriftTextField(text, { text = it }, stringResource(R.string.savings_deposit_hint), keyboardType = KeyboardType.Decimal)
+            DriftTextField(
+                text, { text = it }, stringResource(R.string.savings_deposit_hint), keyboardType = KeyboardType.Decimal,
+                imeAction = ImeAction.Done, onImeAction = confirmDeposit, focusRequester = depositFocus,
+            )
+            FocusOnOpen(depositFocus)
         }
     }
     deleting?.let { g ->
@@ -404,8 +418,9 @@ private fun LongTermGoalDialog(title: String, goal: SavingsGoalEntity?, onDismis
         dismissText = stringResource(R.string.cancel),
         confirmEnabled = valid,
     ) {
-        DriftTextField(name, { name = it }, stringResource(R.string.savings_goal_name))
-        DriftTextField(amount, { amount = it }, stringResource(R.string.savings_goal_amount), keyboardType = KeyboardType.Decimal)
-        DateField(date, { date = it }, stringResource(R.string.savings_goal_date), errorText = stringResource(R.string.date_invalid))
+        DriftTextField(name, { name = it }, stringResource(R.string.savings_goal_name), imeAction = ImeAction.Next)
+        DriftTextField(amount, { amount = it }, stringResource(R.string.savings_goal_amount), keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next)
+        // A target date lies ahead: the calendar button is offered, "היום · אתמול · שלשום" are not.
+        DateField(date, { date = it }, stringResource(R.string.savings_goal_date), errorText = stringResource(R.string.date_invalid), quickDays = false)
     }
 }

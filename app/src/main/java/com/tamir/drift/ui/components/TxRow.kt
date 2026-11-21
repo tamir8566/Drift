@@ -26,6 +26,8 @@ fun sourceName(source: String): String = when (source) {
  * Maps a stored transaction to the design's row: "merchant" / "today · Google Pay · category" / amount.
  * A refund is shown in lime with a minus and a "זיכוי" tag; a transfer is dimmed with "לא נספר";
  * a foreign charge shows "≈" before its estimated shekel amount and the original amount as a tag.
+ * A long press opens the quick-actions sheet of the expense ([LocalTxQuickSheet]) unless
+ * [quickActions] is off.
  */
 @Composable
 fun TxRow(
@@ -34,8 +36,11 @@ fun TxRow(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     showDate: Boolean = true,
+    quickActions: Boolean = true,
 ) {
     val context = LocalContext.current
+    val openQuickSheet = LocalTxQuickSheet.current
+    val onLongClick: (() -> Unit)? = if (quickActions) { { openQuickSheet(tx.id) } } else null
     val category = categories[tx.categoryId]
     val categoryName = category?.name ?: stringResource(R.string.cat_other)
     val dot = category?.let { Color(it.color) } ?: DriftColors.TextDim
@@ -48,6 +53,7 @@ fun TxRow(
             sharedTag = null,
             titleColor = DriftColors.Orange,
             modifier = modifier,
+            onLongClick = onLongClick,
             onClick = onClick,
         )
         return
@@ -82,6 +88,7 @@ fun TxRow(
         amountColor = if (kind == TxnKind.REFUND) DriftColors.Lime else DriftColors.Text,
         tagColor = if (kind == TxnKind.TRANSFER) DriftColors.TextSecondary else DriftColors.Lime,
         dimmed = kind == TxnKind.TRANSFER,
+        onLongClick = onLongClick,
         onClick = onClick,
     )
 }

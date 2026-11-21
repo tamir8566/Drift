@@ -114,15 +114,36 @@ object ShiftCalculator {
         return diff / 60.0
     }
 
-    /** "8:30" / "08:30" / "8.30" → minutes from midnight; null when not a valid clock time. */
+    /**
+     * A typed clock time → minutes from midnight; null when it is not a valid one.
+     * With a separator: "8:30" / "08:30" / "17.30" / "17 30". Digits only: one or two digits are a
+     * whole hour ("9" → 09:00, "17" → 17:00); three or four end with the two minute digits
+     * ("930" → 09:30, "1730" → 17:30).
+     */
     fun parseClock(text: String): Int? {
         val parts = text.trim().split(':', '.', ' ').filter { it.isNotBlank() }
         if (parts.isEmpty() || parts.size > 2) return null
-        val h = parts[0].toIntOrNull() ?: return null
-        val m = if (parts.size == 2) parts[1].toIntOrNull() ?: return null else 0
+        if (parts.any { part -> part.any { c -> c !in '0'..'9' } }) return null
+        val h: Int
+        val m: Int
+        if (parts.size == 1 && parts[0].length in 3..4) {
+            val digits = parts[0]
+            h = digits.dropLast(2).toIntOrNull() ?: return null
+            m = digits.takeLast(2).toIntOrNull() ?: return null
+        } else {
+            h = parts[0].toIntOrNull() ?: return null
+            m = if (parts.size == 2) parts[1].toIntOrNull() ?: return null else 0
+        }
         if (h !in 0..23 || m !in 0..59) return null
         return h * 60 + m
     }
+
+    /**
+     * The typed time in its one stored / shown form "HH:mm" ("1730", "17.30", "930", "9" →
+     * "17:30", "17:30", "09:30", "09:00"); null when it is not a valid clock time. Time fields
+     * apply it when they lose focus and before saving.
+     */
+    fun normalizeClock(text: String): String? = parseClock(text)?.let { formatClock(it) }
 
     /** Minutes from midnight → "08:30". */
     fun formatClock(minuteOfDay: Int): String {

@@ -24,8 +24,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -42,12 +44,14 @@ import com.tamir.drift.ui.components.CategoryBar
 import com.tamir.drift.ui.components.DriftDialog
 import com.tamir.drift.ui.components.DriftTextField
 import com.tamir.drift.ui.components.EmptyNote
+import com.tamir.drift.ui.components.FocusOnOpen
 import com.tamir.drift.ui.components.GlassCard
 import com.tamir.drift.ui.components.HairlineDivider
 import com.tamir.drift.ui.components.ScreenHeader
 import com.tamir.drift.ui.components.SectionHeader
 import com.tamir.drift.ui.components.Stat
 import com.tamir.drift.ui.components.StatTriplet
+import com.tamir.drift.ui.components.StepperRow
 import com.tamir.drift.ui.components.SwitchRow
 import com.tamir.drift.ui.components.composeColor
 import com.tamir.drift.ui.driftViewModel
@@ -56,7 +60,14 @@ import com.tamir.drift.ui.theme.DriftColors
 import com.tamir.drift.ui.theme.DriftType
 import kotlin.math.abs
 
-/** PRD "תקציב חודשי". Reached from the home hero and from settings (no longer a bottom tab). */
+/** The − / + step of the total budget, shekels. */
+private const val BUDGET_STEP = 100.0
+
+/**
+ * PRD "תקציב חודשי". Reached from the home hero and from settings (no longer a bottom tab).
+ * The total budget is changed in place with − / + (100 ₪ a step); a tap on the number opens the
+ * amount dialog to type it.
+ */
 @Composable
 fun BudgetScreen(onBack: () -> Unit) {
     val graph = LocalAppGraph.current
@@ -75,18 +86,19 @@ fun BudgetScreen(onBack: () -> Unit) {
     ) {
         item { ScreenHeader(stringResource(R.string.budget_title), onBack = onBack, backDescription = stringResource(R.string.nav_back)) }
 
-        // Total budget card (tap to edit)
+        // Total budget card: − / + in steps of 100 ₪, a tap on the number types it.
         item {
-            GlassCard(Modifier.fillMaxWidth(), onClick = { editTotal = true }) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Text(stringResource(R.string.budget_total), style = DriftType.Label13, color = DriftColors.TextSecondary)
-                        Text(stringResource(R.string.edit), style = DriftType.Link12, color = DriftColors.Lime)
-                    }
-                    Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(Fmt.money(summary?.totalBudget ?: 0.0), style = DriftType.Big, color = DriftColors.Text, modifier = Modifier.alignByBaseline())
-                        Text(stringResource(R.string.shekel), style = DriftType.Label13, color = DriftColors.TextSecondary, modifier = Modifier.alignByBaseline())
-                    }
+            GlassCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    val total = summary?.totalBudget ?: 0.0
+                    StepperRow(
+                        label = stringResource(R.string.budget_total),
+                        valueText = Fmt.money(total),
+                        onDecrease = { if (summary != null) vm.setTotalBudget((total - BUDGET_STEP).coerceAtLeast(BUDGET_STEP)) },
+                        onIncrease = { if (summary != null) vm.setTotalBudget(total + BUDGET_STEP) },
+                        onEdit = { editTotal = true },
+                        canDecrease = summary != null && total > BUDGET_STEP,
+                    )
                     // One value for the line and for the percent under it.
                     val bar = summary?.bar ?: BarValue.EMPTY
                     val remaining = summary?.remaining ?: 0.0
@@ -98,6 +110,7 @@ fun BudgetScreen(onBack: () -> Unit) {
                             else "${stringResource(R.string.budget_remaining)} ${Fmt.money(remaining)}",
                         style = DriftType.Label12, color = DriftColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
+                    Text(stringResource(R.string.budget_change_note), style = DriftType.Label11, color = DriftColors.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         }
@@ -232,7 +245,11 @@ private fun CategoryBudgetRow(cat: CategoryEntity, spend: CategorySpend?, onClic
     }
 }
 
-/** Numeric amount dialog used for the total and category budgets. onSave(null) = remove. */
+/**
+ * Numeric amount dialog used for the budgets and the goal targets. onSave(null) = remove.
+ * It opens with the field focused, the keyboard up and the old value selected — typing replaces
+ * it — and the keyboard's "Done" saves a valid amount.
+ */
 @Composable
 fun AmountDialog(
     title: String,
@@ -244,15 +261,22 @@ fun AmountDialog(
 ) {
     var text by remember { mutableStateOf(initial) }
     val value = AmountInput.parse(text)
+    val valid = value != null && value > 0
+    val focus = remember { FocusRequester() }
     DriftDialog(
         title = title,
         onDismiss = onDismiss,
         confirmText = stringResource(R.string.save),
         onConfirm = { onSave(value) },
         dismissText = stringResource(R.string.cancel),
-        confirmEnabled = value != null && value > 0,
+        confirmEnabled = valid,
     ) {
-        DriftTextField(text, { text = it }, stringResource(R.string.budget_edit_hint), keyboardType = KeyboardType.Decimal)
+        DriftTextField(
+            text, { text = it }, stringResource(R.string.budget_edit_hint), keyboardType = KeyboardType.Decimal,
+            imeAction = ImeAction.Done, onImeAction = { if (valid) onSave(value) },
+            focusRequester = focus, selectAllOnFocus = true,
+        )
+        FocusOnOpen(focus)
         if (note != null) Text(note, style = DriftType.Label11, color = DriftColors.TextSecondary)
         if (allowRemove) {
             Text(

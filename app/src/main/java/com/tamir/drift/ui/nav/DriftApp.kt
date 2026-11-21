@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -34,6 +35,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -43,18 +45,29 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.tamir.drift.R
+import com.tamir.drift.data.repo.toJobSummaries
+import com.tamir.drift.data.repo.toShiftSummaries
+import com.tamir.drift.di.UiMessage
+import com.tamir.drift.domain.work.QuickShift
+import com.tamir.drift.domain.work.QuickShiftPlan
+import com.tamir.drift.domain.work.ShiftCalculator
 import com.tamir.drift.notify.DeepLink
 import com.tamir.drift.ui.LocalAppGraph
+import com.tamir.drift.ui.announceShiftSaved
 import com.tamir.drift.ui.components.BottomTab
 import com.tamir.drift.ui.components.DriftBackdrop
 import com.tamir.drift.ui.components.DriftBottomBar
 import com.tamir.drift.ui.components.DriftIcons
 import com.tamir.drift.ui.components.GlassCard
+import com.tamir.drift.ui.components.LocalTxQuickSheet
+import com.tamir.drift.ui.components.TxQuickSheet
+import com.tamir.drift.ui.format.Fmt
 import com.tamir.drift.ui.screens.add.ManualAddScreen
 import com.tamir.drift.ui.screens.budget.BudgetScreen
 import com.tamir.drift.ui.screens.detail.TransactionDetailScreen
 import com.tamir.drift.ui.screens.goal.GoalScreen
 import com.tamir.drift.ui.screens.home.HomeScreen
+import com.tamir.drift.ui.screens.inbox.UnsortedMerchantsScreen
 import com.tamir.drift.ui.screens.settings.CalibrationScreen
 import com.tamir.drift.ui.screens.settings.DebugLogScreen
 import com.tamir.drift.ui.screens.settings.SettingsScreen
@@ -67,7 +80,12 @@ import com.tamir.drift.ui.theme.DriftColors
 import com.tamir.drift.ui.theme.DriftType
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
+import java.time.LocalDate
 import java.time.YearMonth
+
+/** "No date given" for the shift route's date argument. */
+private const val NO_DATE = Long.MIN_VALUE
 
 private val topLevel = mapOf(
     Routes.HOME to BottomTab.HOME,
@@ -88,6 +106,13 @@ fun DriftApp(deepLink: String? = null, onDeepLinkConsumed: () -> Unit = {}) {
     val baseRoute = route?.substringBefore('?')
     val activeTab = topLevel[baseRoute]
     var showAddMenu by remember { mutableStateOf(false) }
+    val graph = LocalAppGraph.current
+    // The expense whose long-press sheet is open (drawn here, above the bottom bar too).
+    val quickSheetTx = remember { mutableStateOf<Long?>(null) }
+    val openQuickSheet: (Long) -> Unit = remember { { id: Long -> quickSheetTx.value = id } }
+    // The "כמו בפעם הקודמת" row of the plus menu is built from the stored jobs and shifts.
+    val jobs by graph.work.jobs.collectAsStateWithLifecycle(initialValue = emptyList())
+    val shifts by graph.work.shifts.collectAsStateWithLifecycle(initialValue = emptyList())
 
     // Notifications: budget alerts → budget, weekly work summary → goal, weekly spend summary → where.
     LaunchedEffect(deepLink) {
@@ -106,7 +131,9 @@ fun DriftApp(deepLink: String? = null, onDeepLinkConsumed: () -> Unit = {}) {
     DriftBackdrop {
         Column(Modifier.fillMaxSize()) {
             Box(Modifier.weight(1f)) {
-                DriftNavHost(nav)
+                CompositionLocalProvider(LocalTxQuickSheet provides openQuickSheet) {
+                    DriftNavHost(nav)
+                }
             }
             if (activeTab != null) {
                 DriftBottomBar(
@@ -118,48 +145,104 @@ fun DriftApp(deepLink: String? = null, onDeepLinkConsumed: () -> Unit = {}) {
             }
         }
         if (showAddMenu && activeTab != null) {
+            // Today's shift like the last one: hidden without an earlier shift to copy, and once
+            // today already has a shift of that job.
+            val quickShift: QuickShiftPlan? = remember(jobs, shifts) {
+                QuickShift.plan(LocalDate.now(), jobs.toJobSummaries(), shifts.toShiftSummaries())
+            }
             AddMenu(
                 onDismiss = { showAddMenu = false },
                 onExpense = { showAddMenu = false; nav.navigate(Routes.ADD) },
                 onShift = { showAddMenu = false; nav.navigate(Routes.shift()) },
+                quickShift = quickShift,
+                onQuickShift = { plan ->
+                    showAddMenu = false
+                    // Saved at once; the root message confirms the day total and offers the undo.
+                    graph.scope.launch {
+                        val id = graph.work.addShift(
+                            jobId = plan.job.id,
+                            date = LocalDate.ofEpochDay(plan.epochDay),
+                            startTime = plan.startMinute,
+                            endTime = plan.endMinute,
+                            hours = plan.hours,
+                            isShabbatRate = plan.isShabbatRate,
+                            manualAmountAgorot = null,
+                            note = null,
+                            travelAgorot = plan.travelAgorot,
+                        )
+                        graph.announceShiftSaved(id, null)
+                    }
+                },
             )
+        }
+        val quickId = quickSheetTx.value
+        if (quickId != null) {
+            TxQuickSheet(quickId, onDismiss = { quickSheetTx.value = null })
         }
         MessageHost(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(start = 22.dp, end = 22.dp, bottom = 96.dp))
     }
 }
 
 /**
- * The app-wide inline message ("עודכנו 3 הוצאות של …"): a quiet glass pill above the bottom bar
- * that shows the latest message from the app graph for a few seconds.
+ * The app-wide inline message ("עודכנו 3 הוצאות של …", "נמחק · ביטול"): a quiet glass pill above
+ * the bottom bar that shows the latest message from the app graph for a few seconds. A message
+ * with an action shows it as a lime link at the end; tapping it runs the action (the undo) on the
+ * app scope and closes the message.
  */
 @Composable
 private fun MessageHost(modifier: Modifier = Modifier) {
     val graph = LocalAppGraph.current
-    var message by remember { mutableStateOf<String?>(null) }
+    var message by remember { mutableStateOf<UiMessage?>(null) }
     LaunchedEffect(graph) {
-        graph.messages.collectLatest { text ->
-            message = text
-            delay(MESSAGE_MILLIS)
+        graph.messages.collectLatest { next ->
+            message = next
+            delay(next.durationMillis)
             message = null
         }
     }
-    val text = message ?: return
+    val shown: UiMessage = message ?: return
+    val actionLabel = shown.actionLabel
+    val action = shown.action
     GlassCard(modifier.fillMaxWidth().background(DriftColors.Background, RoundedCornerShape(16.dp)), radius = 16.dp, borderColor = DriftColors.PlusBorder) {
-        Text(
-            text, style = DriftType.Label13, color = DriftColors.Text, maxLines = 2, overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-        )
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                shown.text, style = DriftType.Label13, color = DriftColors.Text, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f).padding(vertical = 6.dp),
+            )
+            if (actionLabel != null && action != null) {
+                Text(
+                    actionLabel, style = DriftType.RowTitle, color = DriftColors.Lime, maxLines = 1,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable {
+                            message = null
+                            graph.scope.launch { action() }
+                        }
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                )
+            }
+        }
     }
 }
-
-private const val MESSAGE_MILLIS = 3_500L
 
 /**
  * PRD: the plus opens a small menu — "הוצאה" / "משמרת". A glass sheet anchored above the
  * bottom bar over a light scrim; tapping outside — or the back button — closes it.
+ * With [quickShift] a first row "כמו בפעם הקודמת" saves today's shift in one tap: the job, its
+ * hours (or start–end, or "יום") and the day total it will be saved with.
  */
 @Composable
-private fun AddMenu(onDismiss: () -> Unit, onExpense: () -> Unit, onShift: () -> Unit) {
+private fun AddMenu(
+    onDismiss: () -> Unit,
+    onExpense: () -> Unit,
+    onShift: () -> Unit,
+    quickShift: QuickShiftPlan?,
+    onQuickShift: (QuickShiftPlan) -> Unit,
+) {
     // The system back button closes the menu instead of leaving the screen under it. Registered
     // here — composed after the navigation host, whenever the menu opens — so it is the newest
     // back callback and wins over the host's own.
@@ -180,6 +263,21 @@ private fun AddMenu(onDismiss: () -> Unit, onExpense: () -> Unit, onShift: () ->
             radius = 22.dp,
         ) {
             Column(Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
+                if (quickShift != null) {
+                    val start = quickShift.startMinute
+                    val end = quickShift.endMinute
+                    val what = when {
+                        quickShift.job.isDaily -> stringResource(R.string.work_shift_day)
+                        start != null && end != null -> "${ShiftCalculator.formatClock(start)}–${ShiftCalculator.formatClock(end)}"
+                        else -> stringResource(R.string.work_hours_value, ShiftCalculator.formatHours(quickShift.hours))
+                    }
+                    AddMenuRow(
+                        DriftIcons.Check, stringResource(R.string.add_menu_same_as_last), DriftColors.Lime,
+                        onClick = { onQuickShift(quickShift) },
+                        subtitle = "${quickShift.job.name} · $what",
+                        trailing = stringResource(R.string.amount_with_shekel, Fmt.moneyExact(quickShift.totalAgorot)),
+                    )
+                }
                 AddMenuRow(DriftIcons.Plus, stringResource(R.string.add_menu_expense), DriftColors.Orange, onExpense)
                 AddMenuRow(DriftIcons.Work, stringResource(R.string.add_menu_shift), DriftColors.Lime, onShift)
             }
@@ -188,7 +286,7 @@ private fun AddMenu(onDismiss: () -> Unit, onExpense: () -> Unit, onShift: () ->
 }
 
 @Composable
-private fun AddMenuRow(icon: ImageVector, text: String, color: Color, onClick: () -> Unit) {
+private fun AddMenuRow(icon: ImageVector, text: String, color: Color, onClick: () -> Unit, subtitle: String? = null, trailing: String? = null) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -204,7 +302,15 @@ private fun AddMenuRow(icon: ImageVector, text: String, color: Color, onClick: (
         ) {
             Icon(icon, text, tint = color, modifier = Modifier.size(18.dp))
         }
-        Text(text, style = DriftType.RowTitle, color = DriftColors.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            Text(text, style = DriftType.RowTitle, color = DriftColors.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (subtitle != null) {
+                Text(subtitle, style = DriftType.Label11, color = DriftColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        if (trailing != null) {
+            Text(trailing, style = DriftType.RowAmount, color = DriftColors.Text, maxLines = 1)
+        }
     }
 }
 
@@ -265,6 +371,7 @@ private fun DriftNavHost(nav: NavHostController) {
                 onOpenSettings = { nav.navigate(Routes.SETTINGS) },
                 onOpenSearch = { nav.navigate(Routes.transactions(focusSearch = true)) },
                 onOpenUnparsed = { nav.navigate(Routes.transactions(unparsedOnly = true)) },
+                onOpenUnsorted = { nav.navigate(Routes.UNSORTED) },
                 onOpenBudget = { nav.navigate(Routes.BUDGET) },
                 onOpenGoal = { nav.navigateTopLevel(BottomTab.GOAL) },
             )
@@ -283,6 +390,7 @@ private fun DriftNavHost(nav: NavHostController) {
         composable(Routes.WORK) {
             WorkScreen(
                 onAddShift = { nav.navigate(Routes.shift()) },
+                onAddShiftOn = { day -> nav.navigate(Routes.shift(epochDay = day.toEpochDay())) },
                 onEditShift = { nav.navigate(Routes.shift(it)) },
                 onOpenAllShifts = { nav.navigate(Routes.SHIFTS) },
             )
@@ -293,17 +401,30 @@ private fun DriftNavHost(nav: NavHostController) {
         composable(Routes.GOAL) { GoalScreen() }
         composable(Routes.ADD) { ManualAddScreen(onDone = { nav.popBackStack() }) }
         composable(
-            "${Routes.SHIFT}?${Routes.ARG_ID}={${Routes.ARG_ID}}",
-            arguments = listOf(navArgument(Routes.ARG_ID) { type = NavType.LongType; defaultValue = -1L }),
+            "${Routes.SHIFT}?${Routes.ARG_ID}={${Routes.ARG_ID}}&${Routes.ARG_DATE}={${Routes.ARG_DATE}}",
+            arguments = listOf(
+                navArgument(Routes.ARG_ID) { type = NavType.LongType; defaultValue = -1L },
+                // An epoch day; NO_DATE = open on today.
+                navArgument(Routes.ARG_DATE) { type = NavType.LongType; defaultValue = NO_DATE },
+            ),
         ) { entry ->
             val id = entry.arguments?.getLong(Routes.ARG_ID) ?: -1L
-            AddShiftScreen(shiftId = id.takeIf { it >= 0L }, onDone = { nav.popBackStack() })
+            val day = entry.arguments?.getLong(Routes.ARG_DATE) ?: NO_DATE
+            AddShiftScreen(
+                shiftId = id.takeIf { it >= 0L },
+                onDone = { nav.popBackStack() },
+                initialEpochDay = day.takeIf { it != NO_DATE },
+            )
         }
         composable(
             Routes.DETAIL,
             arguments = listOf(navArgument(Routes.ARG_ID) { type = NavType.LongType }),
         ) { entry ->
-            TransactionDetailScreen(id = entry.arguments?.getLong(Routes.ARG_ID) ?: -1L, onBack = { nav.popBackStack() })
+            TransactionDetailScreen(
+                id = entry.arguments?.getLong(Routes.ARG_ID) ?: -1L,
+                onBack = { nav.popBackStack() },
+                onOpenCalibration = { txId -> nav.navigate(Routes.calibration(txId)) },
+            )
         }
         composable(
             "${Routes.TRANSACTIONS}?${Routes.ARG_CATEGORY}={${Routes.ARG_CATEGORY}}&${Routes.ARG_MONTH}={${Routes.ARG_MONTH}}" +
@@ -333,7 +454,14 @@ private fun DriftNavHost(nav: NavHostController) {
                 onOpenBudget = { nav.navigate(Routes.BUDGET) },
             )
         }
-        composable(Routes.CALIBRATION) { CalibrationScreen(onBack = { nav.popBackStack() }) }
+        composable(
+            "${Routes.CALIBRATION}?${Routes.ARG_TX}={${Routes.ARG_TX}}",
+            arguments = listOf(navArgument(Routes.ARG_TX) { type = NavType.LongType; defaultValue = -1L }),
+        ) { entry ->
+            val txId = entry.arguments?.getLong(Routes.ARG_TX) ?: -1L
+            CalibrationScreen(onBack = { nav.popBackStack() }, prefillTransactionId = txId.takeIf { it >= 0L })
+        }
+        composable(Routes.UNSORTED) { UnsortedMerchantsScreen(onBack = { nav.popBackStack() }) }
         composable(Routes.DEBUG) {
             DebugLogScreen(onBack = { nav.popBackStack() }, onOpenTransaction = { nav.navigate(Routes.detail(it)) })
         }

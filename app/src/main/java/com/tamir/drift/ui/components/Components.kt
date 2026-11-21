@@ -3,9 +3,11 @@ package com.tamir.drift.ui.components
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -218,8 +220,10 @@ fun CategoryCard(
 
 /**
  * Transaction row: 10dp colored dot, name + meta at the start, amount at the end, white 7%
- * divider. Optional lime 10sp tag "עם חברים · שילמתי X".
+ * divider. Optional lime 10sp tag "עם חברים · שילמתי X". With [onLongClick] a long press on the
+ * row runs it (the quick-actions sheet of an expense).
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TransactionRow(
     title: String,
@@ -233,9 +237,14 @@ fun TransactionRow(
     tagColor: Color = DriftColors.Lime,
     /** A row that does not count ("לא נספר") is drawn dimmed. */
     dimmed: Boolean = false,
+    onLongClick: (() -> Unit)? = null,
     onClick: () -> Unit,
 ) {
-    Column(modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).clickable(onClick = onClick)) {
+    val rowBase: Modifier = modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp))
+    val rowModifier: Modifier =
+        if (onLongClick != null) rowBase.combinedClickable(onClick = onClick, onLongClick = onLongClick)
+        else rowBase.clickable(onClick = onClick)
+    Column(rowModifier) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 2.dp, vertical = 10.dp).alpha(if (dimmed) 0.5f else 1f),
             verticalAlignment = Alignment.CenterVertically,

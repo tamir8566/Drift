@@ -104,6 +104,7 @@ class WorkViewModel(private val graph: AppGraph) : ViewModel() {
         val first = month.atDay(1).toEpochDay()
         val last = month.atEndOfMonth().toEpochDay()
         val inMonth = counted.filter { it.date in first..last }
+        val workedDays: Set<Long> = shifts.map { it.date }.toSet()
 
         val cards = jobs.filter { it.isActive }.map { job ->
             val mine = inMonth.filter { it.jobId == job.id }
@@ -127,8 +128,9 @@ class WorkViewModel(private val graph: AppGraph) : ViewModel() {
             earnedWeekAgorot = GoalCalculator.incomeIn(summaries, week),
             hoursMonth = GoalCalculator.hourlyHoursIn(summaries, jobs.toJobSummaries(), month),
             shiftsMonth = inMonth.size,
-            workedDays = shifts.map { it.date }.toSet(),
-            plannedDays = planned.map { it.date }.toSet(),
+            workedDays = workedDays,
+            // The planned ring is for days without a shift: a worked day shows its dot only.
+            plannedDays = planned.map { it.date }.toSet() - workedDays,
             jobs = jobs,
             jobCards = cards,
             recentShifts = shifts.take(RECENT_SHIFTS),

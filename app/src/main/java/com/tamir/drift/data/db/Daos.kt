@@ -37,6 +37,10 @@ interface TransactionDao {
     @Insert
     suspend fun insert(t: TransactionEntity): Long
 
+    /** Writes the row under its own id — used to bring back a row that was just deleted (undo). */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(t: TransactionEntity): Long
+
     @Update
     suspend fun update(t: TransactionEntity)
 
@@ -226,6 +230,10 @@ interface ShiftDao {
 
     @Insert
     suspend fun insert(s: ShiftEntity): Long
+
+    /** Writes the row under its own id — used to bring back a deleted or overwritten shift (undo). */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(s: ShiftEntity): Long
 
     @Update
     suspend fun update(s: ShiftEntity)

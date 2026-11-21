@@ -14,6 +14,7 @@ import com.tamir.drift.data.repo.toSummary
 import com.tamir.drift.di.AppGraph
 import com.tamir.drift.domain.export.CsvBuilder
 import com.tamir.drift.domain.model.TxnKind
+import com.tamir.drift.domain.search.TxSearch
 import com.tamir.drift.domain.time.MonthPeriod
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -40,6 +41,13 @@ data class AllTxUiState(
     val unparsed: List<TransactionEntity> = emptyList(),
     val groups: List<DayGroup> = emptyList(),
     val count: Int = 0,
+    /**
+     * The line above the list for whatever is filtered: how many expenses, their net total (my
+     * share, refunds subtracted, "לא נספר" left out) and the average per expense.
+     */
+    val summary: TxSearch.Summary = TxSearch.Summary(0, 0.0),
+    /** The filtered rows include some from before the tracking start (the line says so). */
+    val includesBeforeStart: Boolean = false,
 )
 
 class AllTransactionsViewModel(
@@ -58,13 +66,14 @@ class AllTransactionsViewModel(
         ),
     )
 
-    val state: StateFlow<AllTxUiState> = combine(graph.transactions.all, graph.categories.categories, filter) { txs, cats, f ->
+    val state: StateFlow<AllTxUiState> = combine(graph.transactions.all, graph.categories.categories, filter, graph.settings.settings) { txs, cats, f, settings ->
         val months = txs.map { YearMonth.from(Instant.ofEpochMilli(it.timestamp).atZone(zone)) }.distinct().sortedDescending()
-        val q = f.query.trim().lowercase()
+        val monthPeriod = f.month?.let { MonthPeriod(it, zone) }
+        // Free text over merchant / note / raw text; a number also finds amounts ("214" → 214 ₪).
         val filtered = txs.filter { t ->
             (f.category == null || t.categoryId == f.category) &&
-                (f.month == null || MonthPeriod(f.month, zone).contains(t.timestamp)) &&
-                (q.isEmpty() || t.merchant.lowercase().contains(q) || (t.note?.lowercase()?.contains(q) ?: false) || (t.rawText?.lowercase()?.contains(q) ?: false))
+                (monthPeriod == null || monthPeriod.contains(t.timestamp)) &&
+                TxSearch.matches(f.query, t.merchant, t.note, t.rawText, t.amountFull, t.amountMine)
         }
         val unparsed = filtered.filter { it.isUnparsed }.sortedByDescending { it.timestamp }
         val parsed = if (f.unparsedOnly) emptyList() else filtered.filter { !it.isUnparsed }
@@ -72,6 +81,7 @@ class AllTransactionsViewModel(
             .groupBy { Instant.ofEpochMilli(it.timestamp).atZone(zone).toLocalDate() }
             .toSortedMap(compareByDescending<LocalDate> { it })
             .map { (date, list) -> DayGroup(date, list.sortedByDescending { it.timestamp }, list.sumOf { it.netMineAgorot }) }
+        val window = settings.trackingWindow
         AllTxUiState(
             filter = f,
             categories = cats.associateBy { it.id },
@@ -80,6 +90,8 @@ class AllTransactionsViewModel(
             unparsed = unparsed,
             groups = groups,
             count = unparsed.size + parsed.size,
+            summary = TxSearch.summarize(parsed.map { it.toSummary() }),
+            includesBeforeStart = parsed.any { it.txnKind != TxnKind.TRANSFER && !window.includes(it.timestamp, zone) },
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AllTxUiState(filter = filter.value))
 
