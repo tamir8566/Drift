@@ -98,12 +98,13 @@ jobs:
           # Last line of defence: an APK signed with the debug key is never published.
           APKSIGNER="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}/build-tools/35.0.0/apksigner"
           if [ -x "$APKSIGNER" ]; then
+            # The certificate's owner line is never printed: this log is public.
             CERT=$("$APKSIGNER" verify --print-certs "drift-${VERSION_CODE}.apk" | grep "certificate DN" || true)
-            echo "$CERT"
             if echo "$CERT" | grep -qi "Android Debug"; then
               echo "::error::The APK is signed with the debug key – not publishing it."
               exit 1
             fi
+            echo "Signed with the release key."
           fi
 
       # ------------------------------------------------------------------
