@@ -16,7 +16,10 @@ import java.time.ZoneId
  * summary). Only transactions inside [window] (the tracking start) are counted — including the
  * previous-month / previous-week comparisons, which therefore show "—" before the start.
  */
-class MonthSummaryUseCase(private val zone: ZoneId = ZoneId.systemDefault()) {
+class MonthSummaryUseCase(private val fixedZone: ZoneId? = null) {
+
+    /** The device's zone at the moment of use (this object lives as long as the process). */
+    private val zone: ZoneId get() = fixedZone ?: ZoneId.systemDefault()
 
     fun build(
         transactions: List<TransactionEntity>,

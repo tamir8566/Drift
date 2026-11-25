@@ -7,6 +7,7 @@ import com.tamir.drift.data.db.TransactionEntity
 import com.tamir.drift.data.repo.CategoryRepository
 import com.tamir.drift.data.repo.Money
 import com.tamir.drift.data.repo.toSummaries
+import com.tamir.drift.data.repo.toSummary
 import com.tamir.drift.data.settings.SettingsStore
 import com.tamir.drift.domain.dedupe.DuplicateDetector
 import com.tamir.drift.domain.model.CategoryKeys
@@ -15,12 +16,16 @@ import com.tamir.drift.domain.model.TransactionSource
 import com.tamir.drift.domain.model.TxnKind
 import com.tamir.drift.domain.model.UserPattern
 import com.tamir.drift.domain.money.Currencies
+import com.tamir.drift.domain.parser.PaymentText
 import com.tamir.drift.domain.parser.TransactionTextParser
 import com.tamir.drift.domain.refund.RefundMatcher
 import com.tamir.drift.notify.BudgetAlertChecker
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.time.Instant
 import java.time.LocalTime
 import java.time.ZoneId
+import kotlin.math.abs
 
 /**
  * One entry point for every captured text (Google Pay notification or max SMS):
@@ -28,25 +33,38 @@ import java.time.ZoneId
  * A refund text becomes a refund (it inherits the category and share of the purchase it matches);
  * a foreign amount becomes a shekel estimate from the settings' rates table, with the original
  * amount kept beside it. Never throws; failures are logged to the raw-capture debug log.
+ *
+ * Captures are handled one at a time ([gate]): the notification and the SMS of one purchase
+ * arrive within the same second, each on its own coroutine, and the second must see the row the
+ * first one stored — otherwise both pass the duplicate check and the purchase is counted twice.
  */
 class CaptureProcessor(
     private val db: DriftDatabase,
     private val categories: CategoryRepository,
     private val alerts: BudgetAlertChecker,
     private val settings: SettingsStore,
-    private val zone: ZoneId = ZoneId.systemDefault(),
+    private val fixedZone: ZoneId? = null,
     /** Called after a captured text was stored as a new row (parsed or not); never for a duplicate. */
     private val onCaptured: () -> Unit = {},
 ) {
+    /** The device's zone at the moment of use (this object lives as long as the process). */
+    private val zone: ZoneId get() = fixedZone ?: ZoneId.systemDefault()
+
     private val dedupe = DuplicateDetector()
+    private val gate = Mutex()
 
     sealed class Outcome {
         data class Inserted(val id: Long, val unparsed: Boolean, val refund: Boolean = false) : Outcome()
         data class Duplicate(val existingId: Long) : Outcome()
+        /** No amount was read and the text does not speak of money (an offer, "card added"): nothing was stored. */
+        data object Ignored : Outcome()
         data class Failed(val reason: String) : Outcome()
     }
 
-    suspend fun process(source: TransactionSource, senderOrPackage: String, text: String, capturedAt: Long): Outcome {
+    suspend fun process(source: TransactionSource, senderOrPackage: String, text: String, capturedAt: Long): Outcome =
+        gate.withLock { processLocked(source, senderOrPackage, text, capturedAt) }
+
+    private suspend fun processLocked(source: TransactionSource, senderOrPackage: String, text: String, capturedAt: Long): Outcome {
         val rawId = db.rawCaptures().insert(
             RawCaptureEntity(source = source.name, senderOrPackage = senderOrPackage, text = text, capturedAt = capturedAt),
         )
@@ -61,6 +79,7 @@ class CaptureProcessor(
                     else -> RESULT_PARSED
                 }
                 is Outcome.Duplicate -> outcome.existingId to RESULT_DUPLICATE
+                is Outcome.Ignored -> null to RESULT_IGNORED
                 is Outcome.Failed -> null to "$RESULT_FAILED: ${outcome.reason}"
             }
             markResult(rawId, result, txId)
@@ -94,7 +113,16 @@ class CaptureProcessor(
         val origMinor = if (foreign) parsedAmount?.let { Currencies.toMinor(it) } else null
         val origCurrency = if (foreign && origMinor != null) parsed.currency else null
 
+        val window = DuplicateDetector.DEFAULT_WINDOW_MINUTES * 60_000L
+
         if (amountAgorot == null || amountAgorot <= 0L) {
+            // No amount at all, and nothing in the text speaks of money: not a payment (an offer,
+            // "the card was added"). It stays in the raw log only — the user has nothing to complete.
+            if (origMinor == null && !PaymentText.looksLikePayment(text)) return Outcome.Ignored
+            // The same text again within the window (the wallet re-posted its notification): one row is enough.
+            db.transactions().findUnparsedWithText(text, minOf(capturedAt, System.currentTimeMillis()) - window)?.let {
+                return Outcome.Duplicate(it.id)
+            }
             // No amount (or a foreign amount without a usable rate): the user completes it by hand.
             val id = db.transactions().insert(
                 TransactionEntity(
@@ -117,11 +145,17 @@ class CaptureProcessor(
         val amountShekels = Money.toShekels(amountAgorot)
         val timestamp = resolveTimestamp(parsed.date?.resolve(Instant.ofEpochMilli(capturedAt).atZone(zone).toLocalDate()), capturedAt)
 
-        // Duplicate: same amount within ±10 min, from any non-manual source, of the same kind.
-        val window = DuplicateDetector.DEFAULT_WINDOW_MINUTES * 60_000L
+        // Duplicate: same amount captured within ±10 min, from any non-manual source, of the same kind.
+        // "Within 10 minutes" is about when the two texts were captured. A stored row's own time may
+        // have been moved to another day by a date in its text, so each row is compared by whichever
+        // of its two times (transaction time, creation time) is closer to this capture.
         val around = db.transactions().findSameAmountAround(amountAgorot, capturedAt - window, capturedAt + window)
         val candidate = DuplicateDetector.Candidate(amountShekels, capturedAt, source, parsed.merchant, kind)
-        dedupe.findDuplicate(candidate, around.toSummaries())?.let { dup ->
+        val aroundByCaptureTime = around.map { row ->
+            val summary = row.toSummary()
+            if (abs(row.createdAt - capturedAt) < abs(row.timestamp - capturedAt)) summary.copy(timestamp = row.createdAt) else summary
+        }
+        dedupe.findDuplicate(candidate, aroundByCaptureTime)?.let { dup ->
             val existing = db.transactions().getById(dup.id)
             if (existing != null) {
                 val merged = existing.copy(
@@ -190,6 +224,7 @@ class CaptureProcessor(
         const val RESULT_REFUND = "REFUND"
         const val RESULT_UNPARSED = "UNPARSED"
         const val RESULT_DUPLICATE = "DUPLICATE"
+        const val RESULT_IGNORED = "IGNORED"
         const val RESULT_FAILED = "FAILED"
     }
 }

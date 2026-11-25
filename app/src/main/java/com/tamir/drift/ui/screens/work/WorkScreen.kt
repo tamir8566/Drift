@@ -24,6 +24,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -50,6 +51,7 @@ import com.tamir.drift.ui.components.Chip
 import com.tamir.drift.ui.components.DriftDialog
 import com.tamir.drift.ui.components.DriftTextField
 import com.tamir.drift.ui.components.EmptyNote
+import com.tamir.drift.ui.components.FocusOnOpen
 import com.tamir.drift.ui.components.GlassCard
 import com.tamir.drift.ui.components.HairlineDivider
 import com.tamir.drift.ui.components.HeroNumber
@@ -226,7 +228,7 @@ fun WorkScreen(onAddShift: () -> Unit, onAddShiftOn: (LocalDate) -> Unit, onEdit
                                         name = c.job.name,
                                         amountText = stringResource(R.string.amount_with_shekel, Fmt.moneyAgorot(c.monthAmountAgorot)),
                                         metaText = if (c.job.isDaily) {
-                                            stringResource(R.string.work_job_card_meta_daily, c.monthDays)
+                                            if (c.monthDays == 1) stringResource(R.string.work_job_card_meta_daily_one) else stringResource(R.string.work_job_card_meta_daily, c.monthDays)
                                         } else {
                                             stringResource(R.string.work_job_card_meta, ShiftCalculator.formatHours(c.monthHours))
                                         },
@@ -445,6 +447,7 @@ private fun JobDialog(
     // Explicit choice: a job either pays travel (amount required) or is marked as paying none.
     var hasTravel by remember { mutableStateOf(job?.let { it.travelPerShiftAgorot > 0L } ?: false) }
     var main by remember { mutableStateOf(isMain) }
+    val nameFocus = remember { FocusRequester() }
     val rate = when (payType) {
         PayType.HOURLY -> hourlyRate
         PayType.DAILY -> dailyRate
@@ -467,7 +470,9 @@ private fun JobDialog(
         confirmEnabled = valid,
     ) {
         // The dialog itself scrolls (DriftDialog), so the last inputs stay reachable above the keyboard.
-        DriftTextField(name, { name = it }, stringResource(R.string.work_job_name))
+        DriftTextField(name, { name = it }, stringResource(R.string.work_job_name), focusRequester = nameFocus)
+        // A new job opens ready for typing in its first empty field; an existing one is left as it is.
+        FocusOnOpen(nameFocus, enabled = job == null)
         Text(stringResource(R.string.work_pay_type), style = DriftType.Label12, color = DriftColors.TextSecondary)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Chip(stringResource(R.string.work_pay_hourly), payType == PayType.HOURLY, onClick = { payType = PayType.HOURLY })

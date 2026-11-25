@@ -62,6 +62,7 @@ import com.tamir.drift.ui.components.parseDate
 import com.tamir.drift.ui.components.rememberFeedbackActions
 import com.tamir.drift.ui.components.toFieldText
 import com.tamir.drift.ui.components.wholeShekels
+import com.tamir.drift.ui.deleteSavingsGoalWithUndo
 import com.tamir.drift.ui.driftViewModel
 import com.tamir.drift.ui.format.Fmt
 import com.tamir.drift.ui.screens.budget.AmountDialog
@@ -77,6 +78,10 @@ private const val WEEKLY_STEP = 50_00L
 
 /**
  * PRD "מסך יעד" — replaces the old savings tab and absorbs the long-term savings goals.
+ *
+ * Both goals carry over. The month's line, percent and texts refer to the month's goal after the
+ * surplus or deficit of the earlier months (since the tracking start); the week card does the
+ * same with the earlier weeks, across month ends.
  *
  * Two quiet moments, each played once and remembered in the settings: when the month reaches its
  * saving goal a single lime ring opens from the dot of the goal line (with a short vibration and
@@ -167,11 +172,27 @@ fun GoalScreen() {
                         modifier = Modifier.weight(1f),
                         pulseAtMillis = goalPulseAt,
                     )
+                    // The goal next to the line is the month's goal after the carry-over.
+                    val monthGoal = status?.adjustedGoalAgorot ?: state.monthlyGoalAgorot
                     Text(
-                        if (status == null) "—"
-                        else if (negative) stringResource(R.string.goal_short_of_goal, Fmt.moneyAgorot(abs(saved)), Fmt.moneyAgorot(state.monthlyGoalAgorot))
-                        else "${Fmt.percent(bar)} · ${stringResource(R.string.out_of, Fmt.moneyAgorot(saved), Fmt.moneyAgorot(state.monthlyGoalAgorot))}",
+                        when {
+                            status == null -> "—"
+                            status.isCoveredByCarry -> stringResource(R.string.goal_month_covered)
+                            negative -> stringResource(R.string.goal_short_of_goal, Fmt.moneyAgorot(abs(saved)), Fmt.moneyAgorot(monthGoal))
+                            else -> "${Fmt.percent(bar)} · ${stringResource(R.string.out_of, Fmt.moneyAgorot(saved), Fmt.moneyAgorot(monthGoal))}"
+                        },
                         style = DriftType.Label12, color = DriftColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                if (status != null && status.hasCarry && !status.isCoveredByCarry) {
+                    // How the goal above was reached: the monthly goal, plus what was missing / minus the surplus.
+                    Text(
+                        if (status.carryInAgorot > 0L) {
+                            stringResource(R.string.goal_month_carry_plus, Fmt.moneyAgorot(status.goalAgorot), Fmt.moneyAgorot(status.carryInAgorot), Fmt.moneyAgorot(status.adjustedGoalAgorot))
+                        } else {
+                            stringResource(R.string.goal_month_carry_minus, Fmt.moneyAgorot(status.goalAgorot), Fmt.moneyAgorot(-status.carryInAgorot), Fmt.moneyAgorot(status.adjustedGoalAgorot))
+                        },
+                        style = DriftType.Label11, color = DriftColors.TextSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis,
                     )
                 }
                 if (status != null) {
@@ -182,11 +203,17 @@ fun GoalScreen() {
                     when {
                         status.isGoalMet -> Text(stringResource(R.string.goal_met), style = DriftType.Label12, color = DriftColors.Lime)
                         !status.onTrack -> Text(
-                            if (status.mainJobIsDaily) stringResource(R.string.goal_shortfall_days, Fmt.moneyAgorot(status.shortfallAgorot), status.shortfallDays)
-                            else stringResource(R.string.goal_shortfall, Fmt.moneyAgorot(status.shortfallAgorot), status.shortfallHours),
+                            // "יום עבודה אחד" / "שעת עבודה אחת" instead of "1 ימי עבודה".
+                            when {
+                                status.mainJobIsDaily && status.shortfallDays == 1 -> stringResource(R.string.goal_shortfall_days_one, Fmt.moneyAgorot(status.shortfallAgorot))
+                                status.mainJobIsDaily -> stringResource(R.string.goal_shortfall_days, Fmt.moneyAgorot(status.shortfallAgorot), status.shortfallDays)
+                                status.shortfallHours == 1 -> stringResource(R.string.goal_shortfall_one, Fmt.moneyAgorot(status.shortfallAgorot))
+                                else -> stringResource(R.string.goal_shortfall, Fmt.moneyAgorot(status.shortfallAgorot), status.shortfallHours)
+                            },
                             style = DriftType.Label12, color = DriftColors.Orange, maxLines = 2, overflow = TextOverflow.Ellipsis,
                         )
                     }
+                    Text(stringResource(R.string.goal_month_carry_note), style = DriftType.Tag10, color = DriftColors.TextDim, maxLines = 1)
                 }
             }
         }
@@ -205,8 +232,8 @@ fun GoalScreen() {
                         }
                     }
                     // The card speaks about one goal only: this week's goal after the carry-over from
-                    // the earlier weeks of the month. The "מתוך", the bar, its percent and the
-                    // surplus / deficit line below all refer to it.
+                    // all earlier weeks (it runs on across month ends). The "מתוך", the bar, its
+                    // percent and the surplus / deficit line below all refer to it.
                     val income = week?.incomeAgorot ?: 0L
                     val goal = week?.adjustedGoalAgorot ?: state.weeklyGoalAgorot
                     val bar = week?.bar ?: BarValue.EMPTY
@@ -234,6 +261,15 @@ fun GoalScreen() {
                             },
                             style = DriftType.Label11, color = DriftColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
+                        if (week.range.days < 7 && week.goalAgorot > 0L) {
+                            // The week the count begins in: only its days from the tracking start
+                            // count, so its goal is that share of the weekly goal.
+                            Text(
+                                if (week.range.days == 1) stringResource(R.string.goal_week_short_one, Fmt.moneyAgorot(state.weeklyGoalAgorot))
+                                else stringResource(R.string.goal_week_short, week.range.days, Fmt.moneyAgorot(state.weeklyGoalAgorot)),
+                                style = DriftType.Label11, color = DriftColors.TextSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                         if (week.hasCarry) {
                             // How the goal above was reached: the weekly goal, plus what was missing / minus the surplus.
                             Text(
@@ -254,19 +290,23 @@ fun GoalScreen() {
                             },
                             style = DriftType.Label12, color = weekColor, maxLines = 2, overflow = TextOverflow.Ellipsis,
                         )
-                        Text(stringResource(R.string.goal_week_reset_note), style = DriftType.Tag10, color = DriftColors.TextDim, maxLines = 1)
+                        Text(stringResource(R.string.goal_week_carry_note), style = DriftType.Tag10, color = DriftColors.TextDim, maxLines = 1)
                     }
                 }
             }
         }
 
-        // Recommendation line
-        if (status != null && !status.isGoalMet) {
+        // Recommendation line — only while something is still missing to the month's goal.
+        if (status != null && status.remainingToGoalAgorot > 0L) {
             item(key = "recommendation") {
                 GlassCard(Modifier.fillMaxWidth(), radius = 16.dp, borderColor = DriftColors.PlusBorder) {
                     Text(
-                        if (status.mainJobIsDaily) stringResource(R.string.goal_recommendation_days, status.remainingDays, Fmt.moneyAgorot(status.remainingToGoalAgorot))
-                        else stringResource(R.string.goal_recommendation, status.remainingHours, Fmt.moneyAgorot(status.remainingToGoalAgorot)),
+                        when {
+                            status.mainJobIsDaily && status.remainingDays == 1 -> stringResource(R.string.goal_recommendation_days_one, Fmt.moneyAgorot(status.remainingToGoalAgorot))
+                            status.mainJobIsDaily -> stringResource(R.string.goal_recommendation_days, status.remainingDays, Fmt.moneyAgorot(status.remainingToGoalAgorot))
+                            status.remainingHours == 1 -> stringResource(R.string.goal_recommendation_one, Fmt.moneyAgorot(status.remainingToGoalAgorot))
+                            else -> stringResource(R.string.goal_recommendation, status.remainingHours, Fmt.moneyAgorot(status.remainingToGoalAgorot))
+                        },
                         style = DriftType.Label13, color = DriftColors.Text, maxLines = 3, overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                     )
@@ -342,7 +382,7 @@ fun GoalScreen() {
                     val targetDate = Instant.ofEpochMilli(item.goal.targetDate).atZone(ZoneId.systemDefault()).toLocalDate()
                     Text(
                         "${stringResource(R.string.savings_needed_per_month)}: ${Fmt.money(item.status.neededPerMonth)} ₪ · " +
-                            "${stringResource(R.string.savings_months_left, item.status.monthsLeft)} · ${stringResource(R.string.savings_until, Fmt.fullDate(targetDate))}",
+                            "${if (item.status.monthsLeft == 1) stringResource(R.string.savings_months_left_one) else stringResource(R.string.savings_months_left, item.status.monthsLeft)} · ${stringResource(R.string.savings_until, Fmt.fullDate(targetDate))}",
                         style = DriftType.Label11, color = DriftColors.TextSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis,
                     )
                     val projected = item.projectedMonth
@@ -430,7 +470,8 @@ fun GoalScreen() {
             confirmText = stringResource(R.string.delete),
             onConfirm = {
                 feedback.deleted()
-                vm.delete(g.id)
+                // Asked first (the deposits go with the goal), and still reversible from the message.
+                graph.deleteSavingsGoalWithUndo(g, state.longTerm.firstOrNull { it.goal.id == g.id }?.deposits.orEmpty())
                 deleting = null
             },
             dismissText = stringResource(R.string.cancel),
@@ -454,6 +495,7 @@ private fun LongTermGoalDialog(title: String, goal: SavingsGoalEntity?, onDismis
     var date by remember {
         mutableStateOf(goal?.let { Instant.ofEpochMilli(it.targetDate).atZone(zone).toLocalDate().toFieldText() } ?: "")
     }
+    val nameFocus = remember { FocusRequester() }
     val amountValue = AmountInput.parse(amount)
     val dateValue = parseDate(date)
     val valid = name.isNotBlank() && amountValue != null && amountValue > 0 && dateValue != null
@@ -467,8 +509,10 @@ private fun LongTermGoalDialog(title: String, goal: SavingsGoalEntity?, onDismis
         dismissText = stringResource(R.string.cancel),
         confirmEnabled = valid,
     ) {
-        DriftTextField(name, { name = it }, stringResource(R.string.savings_goal_name), imeAction = ImeAction.Next)
+        DriftTextField(name, { name = it }, stringResource(R.string.savings_goal_name), imeAction = ImeAction.Next, focusRequester = nameFocus)
         DriftTextField(amount, { amount = it }, stringResource(R.string.savings_goal_amount), keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next)
+        // A new goal opens ready for typing in its first empty field; an existing one is left as it is.
+        FocusOnOpen(nameFocus, enabled = goal == null)
         // A target date lies ahead: the calendar button is offered, "היום · אתמול · שלשום" are not.
         DateField(date, { date = it }, stringResource(R.string.savings_goal_date), errorText = stringResource(R.string.date_invalid), quickDays = false)
     }

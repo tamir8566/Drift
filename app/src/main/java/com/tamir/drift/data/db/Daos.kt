@@ -1,7 +1,6 @@
 package com.tamir.drift.data.db
 
 import androidx.room.Dao
-import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
@@ -16,9 +15,6 @@ interface TransactionDao {
     @Query("SELECT * FROM transactions ORDER BY timestamp DESC")
     suspend fun getAll(): List<TransactionEntity>
 
-    @Query("SELECT * FROM transactions WHERE timestamp >= :from AND timestamp < :to ORDER BY timestamp DESC")
-    fun observeBetween(from: Long, to: Long): Flow<List<TransactionEntity>>
-
     @Query("SELECT * FROM transactions WHERE timestamp >= :from AND timestamp < :to")
     suspend fun getBetween(from: Long, to: Long): List<TransactionEntity>
 
@@ -28,11 +24,20 @@ interface TransactionDao {
     @Query("SELECT * FROM transactions WHERE id = :id")
     suspend fun getById(id: Long): TransactionEntity?
 
+    /**
+     * Captured rows with this amount whose transaction time or creation time falls in the range.
+     * The creation time is when the text was captured; the transaction time may have been moved
+     * to another day by a date written in the text, so both are looked at.
+     */
     @Query(
         "SELECT * FROM transactions WHERE source != 'MANUAL' AND isUnparsed = 0 AND amountFull = :amountFull " +
-            "AND timestamp BETWEEN :from AND :to",
+            "AND ((timestamp BETWEEN :from AND :to) OR (createdAt BETWEEN :from AND :to))",
     )
     suspend fun findSameAmountAround(amountFull: Long, from: Long, to: Long): List<TransactionEntity>
+
+    /** An unparsed row holding exactly this captured text, created at or after [since] (a re-posted notification). */
+    @Query("SELECT * FROM transactions WHERE isUnparsed = 1 AND rawText = :rawText AND createdAt >= :since LIMIT 1")
+    suspend fun findUnparsedWithText(rawText: String, since: Long): TransactionEntity?
 
     @Insert
     suspend fun insert(t: TransactionEntity): Long
@@ -48,9 +53,6 @@ interface TransactionDao {
     @Query("UPDATE transactions SET categoryId = :categoryId WHERE id IN (:ids)")
     suspend fun setCategory(ids: List<Long>, categoryId: String)
 
-    @Delete
-    suspend fun delete(t: TransactionEntity)
-
     @Query("DELETE FROM transactions WHERE id = :id")
     suspend fun deleteById(id: Long)
 }
@@ -59,9 +61,6 @@ interface TransactionDao {
 interface RawCaptureDao {
     @Query("SELECT * FROM raw_captures ORDER BY capturedAt DESC LIMIT :limit")
     fun observeLatest(limit: Int): Flow<List<RawCaptureEntity>>
-
-    @Query("SELECT * FROM raw_captures WHERE transactionId = :transactionId ORDER BY capturedAt")
-    suspend fun getForTransaction(transactionId: Long): List<RawCaptureEntity>
 
     @Query("SELECT * FROM raw_captures WHERE id = :id")
     suspend fun getById(id: Long): RawCaptureEntity?
@@ -99,9 +98,6 @@ interface CategoryDao {
 
     @Query("UPDATE categories SET monthlyBudget = :budget WHERE id = :id")
     suspend fun setBudget(id: String, budget: Long?)
-
-    @Query("SELECT COUNT(*) FROM categories")
-    suspend fun count(): Int
 }
 
 @Dao
@@ -120,9 +116,6 @@ interface MerchantRuleDao {
 
     @Query("DELETE FROM merchant_rules WHERE keyword = :keyword")
     suspend fun delete(keyword: String)
-
-    @Query("SELECT COUNT(*) FROM merchant_rules WHERE origin = 'BUILTIN'")
-    suspend fun builtinCount(): Int
 }
 
 @Dao
@@ -135,6 +128,10 @@ interface ParsePatternDao {
 
     @Insert
     suspend fun insert(p: ParsePatternEntity): Long
+
+    /** Writes a pattern back under its id (the undo of a delete). */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(p: ParsePatternEntity): Long
 
     @Query("DELETE FROM parse_patterns WHERE id = :id")
     suspend fun delete(id: Long)
@@ -157,14 +154,18 @@ interface SavingsDao {
     @Query("SELECT * FROM savings_goals ORDER BY targetDate")
     fun observeGoals(): Flow<List<SavingsGoalEntity>>
 
-    @Query("SELECT * FROM savings_goals WHERE id = :id")
-    suspend fun getGoal(id: Long): SavingsGoalEntity?
-
     @Query("SELECT * FROM savings_deposits ORDER BY timestamp DESC")
     fun observeDeposits(): Flow<List<SavingsDepositEntity>>
 
     @Insert
     suspend fun insertGoal(g: SavingsGoalEntity): Long
+
+    /** Write a goal and its deposits back under their ids (the undo of a delete). */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertGoal(g: SavingsGoalEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertDeposits(list: List<SavingsDepositEntity>)
 
     @Update
     suspend fun updateGoal(g: SavingsGoalEntity)
@@ -177,9 +178,6 @@ interface SavingsDao {
 
     @Insert
     suspend fun insertDeposit(d: SavingsDepositEntity): Long
-
-    @Query("DELETE FROM savings_deposits WHERE id = :id")
-    suspend fun deleteDeposit(id: Long)
 }
 
 @Dao
@@ -221,9 +219,6 @@ interface ShiftDao {
 
     @Query("SELECT * FROM shifts ORDER BY date DESC, createdAt DESC")
     suspend fun getAll(): List<ShiftEntity>
-
-    @Query("SELECT * FROM shifts WHERE date >= :fromDay AND date <= :toDay ORDER BY date DESC, createdAt DESC")
-    suspend fun getBetween(fromDay: Long, toDay: Long): List<ShiftEntity>
 
     @Query("SELECT * FROM shifts WHERE id = :id")
     suspend fun getById(id: Long): ShiftEntity?

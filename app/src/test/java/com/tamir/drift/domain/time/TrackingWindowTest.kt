@@ -106,4 +106,19 @@ class TrackingWindowTest {
         assertEquals(start, window.startDate)
         assertEquals(null, TrackingWindow.ALL.startDate)
     }
+
+    @Test
+    fun `until the tracking start the trial window is used, from that day on the count is clean`() {
+        val firstLaunch = LocalDate.of(2026, 11, 8).toEpochDay()
+        val trackingStart = start.toEpochDay()
+        // Any day of the trial month: everything since the first launch counts.
+        assertEquals(TrackingWindow(firstLaunch), TrackingWindow.current(LocalDate.of(2026, 11, 25).toEpochDay(), trackingStart, firstLaunch))
+        assertEquals(TrackingWindow(firstLaunch), TrackingWindow.current(LocalDate.of(2026, 11, 30).toEpochDay(), trackingStart, firstLaunch))
+        // From 1 December on, only records from that day count — also months later.
+        val onTheDay = TrackingWindow.current(trackingStart, trackingStart, firstLaunch)
+        assertEquals(TrackingWindow(trackingStart), onTheDay)
+        assertFalse(onTheDay.includes(LocalDate.of(2026, 11, 30).toEpochDay()))
+        assertTrue(onTheDay.includes(trackingStart))
+        assertEquals(TrackingWindow(trackingStart), TrackingWindow.current(LocalDate.of(2027, 3, 1).toEpochDay(), trackingStart, firstLaunch))
+    }
 }

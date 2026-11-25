@@ -1,6 +1,7 @@
 package com.tamir.drift.data.repo
 
 import android.content.Context
+import androidx.room.withTransaction
 import com.tamir.drift.R
 import com.tamir.drift.data.db.DriftDatabase
 import com.tamir.drift.data.db.JobEntity
@@ -102,24 +103,26 @@ class WorkRepository(private val context: Context, private val db: DriftDatabase
         val payType = job?.pay ?: PayType.HOURLY
         val rate = job.currentRate()
         val amount = manualAmountAgorot ?: ShiftCalculator.amount(payType, hours, rate, isShabbatRate)
-        // A day that now has a shift is no longer a "planned" day (the calendar shows the worked dot only).
-        db.plannedDays().delete(date.toEpochDay())
-        return db.shifts().insert(
-            ShiftEntity(
-                jobId = jobId,
-                date = date.toEpochDay(),
-                startTime = startTime,
-                endTime = endTime,
-                hours = hours,
-                isShabbatRate = isShabbatRate,
-                amountAgorot = amount,
-                manualAmount = manualAmountAgorot != null,
-                note = note?.takeIf { it.isNotBlank() },
-                travelAgorot = travelAgorot.coerceAtLeast(0L),
-                rateAgorotAtShift = job?.let { rate.rateAgorot },
-                multiplierAtShift = job?.let { rate.multiplier },
-            ),
+        val shift = ShiftEntity(
+            jobId = jobId,
+            date = date.toEpochDay(),
+            startTime = startTime,
+            endTime = endTime,
+            hours = hours,
+            isShabbatRate = isShabbatRate,
+            amountAgorot = amount,
+            manualAmount = manualAmountAgorot != null,
+            note = note?.takeIf { it.isNotBlank() },
+            travelAgorot = travelAgorot.coerceAtLeast(0L),
+            rateAgorotAtShift = job?.let { rate.rateAgorot },
+            multiplierAtShift = job?.let { rate.multiplier },
         )
+        // A day that now has a shift is no longer a "planned" day (the calendar shows the worked dot
+        // only). Both writes happen together or not at all.
+        return db.withTransaction {
+            db.plannedDays().delete(date.toEpochDay())
+            db.shifts().insert(shift)
+        }
     }
 
     /**
@@ -151,23 +154,24 @@ class WorkRepository(private val context: Context, private val db: DriftDatabase
         val amount = manualAmountAgorot ?: ShiftCalculator.amount(payType, hours, rate, isShabbatRate)
         // Keep a rate on the shift only when it is a real one (the job exists, or it was stored before).
         val keepRate = job != null || existing.rateAgorotAtShift != null
-        db.plannedDays().delete(date.toEpochDay())
-        db.shifts().update(
-            existing.copy(
-                jobId = jobId,
-                date = date.toEpochDay(),
-                startTime = startTime,
-                endTime = endTime,
-                hours = hours,
-                isShabbatRate = isShabbatRate,
-                amountAgorot = amount,
-                manualAmount = manualAmountAgorot != null,
-                note = note?.takeIf { it.isNotBlank() },
-                travelAgorot = travelAgorot.coerceAtLeast(0L),
-                rateAgorotAtShift = if (keepRate) rate.rateAgorot else null,
-                multiplierAtShift = if (keepRate) rate.multiplier else null,
-            ),
+        val updated = existing.copy(
+            jobId = jobId,
+            date = date.toEpochDay(),
+            startTime = startTime,
+            endTime = endTime,
+            hours = hours,
+            isShabbatRate = isShabbatRate,
+            amountAgorot = amount,
+            manualAmount = manualAmountAgorot != null,
+            note = note?.takeIf { it.isNotBlank() },
+            travelAgorot = travelAgorot.coerceAtLeast(0L),
+            rateAgorotAtShift = if (keepRate) rate.rateAgorot else null,
+            multiplierAtShift = if (keepRate) rate.multiplier else null,
         )
+        db.withTransaction {
+            db.plannedDays().delete(date.toEpochDay())
+            db.shifts().update(updated)
+        }
     }
 
     suspend fun deleteShift(id: Long) = db.shifts().deleteById(id)

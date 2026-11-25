@@ -43,14 +43,15 @@ data class WhereUiState(
 
 class WhereViewModel(private val graph: AppGraph, initialCategory: String?) : ViewModel() {
 
-    private val zone = ZoneId.systemDefault()
+    /** Read on every use: a time zone changed while the app runs is picked up by the next computation. */
+    private val zone: ZoneId get() = ZoneId.systemDefault()
     private val period = MutableStateFlow(Period.MONTH)
     private val highlight = MutableStateFlow(initialCategory)
 
     val state: StateFlow<WhereUiState> = combine(
         graph.transactions.all,
         graph.categories.categories,
-        graph.settings.settings,
+        graph.daySettings,
         period,
         highlight,
     ) { txs, cats, settings, p, hl ->
@@ -58,7 +59,10 @@ class WhereViewModel(private val graph: AppGraph, initialCategory: String?) : Vi
         val month = YearMonth.now(zone)
         // Tracking start: period totals, category breakdown, 6-month bars, top merchants,
         // "where to save" and subscription detection (≥2 charges after the start) all use this list.
-        val summaries = txs.toSummaries().sinceStart(settings.trackingWindow, zone)
+        // Like the home and budget screens, everything here counts through the end of today: an
+        // expense dated on a later day waits for its day.
+        val todayEnd = java.time.LocalDate.now(zone).plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+        val summaries = txs.toSummaries().sinceStart(settings.trackingWindow, zone).filter { it.timestamp < todayEnd }
         val end = MonthPeriod(month, zone).endMillis
         val start = MonthPeriod(month.minusMonths((p.months - 1).toLong()), zone).startMillis
 

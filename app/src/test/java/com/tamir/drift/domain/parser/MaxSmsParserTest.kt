@@ -18,7 +18,7 @@ class MaxSmsParserTest {
         פז אפליקציית יילו
         חייב את כרטיסך 1234 בסך 216.79 שח
         כדאי לעקוב אחר החיובים כאן:
-        https://link.max.co.il/5f093cf
+        https://link.max.co.il/0000000
     """.trimIndent()
 
     @Test
@@ -79,11 +79,27 @@ class MaxSmsParserTest {
     }
 
     @Test
-    fun `plain date in the future rolls back a year`() {
+    fun `plain date just before the new year rolls back a year`() {
         val r = parser.parse("בית עסק נטפליקס חייב את כרטיסך בסך 54.90 שח בתאריך 28/12")
         assertEquals("נטפליקס", r.merchant)
-        val today = LocalDate.of(2026, 11, 8)
-        assertEquals(LocalDate.of(2025, 12, 28), r.date!!.resolve(today))
+        // Read on 2 January: 28/12 is five days ago, in the previous year.
+        assertEquals(LocalDate.of(2026, 12, 28), r.date!!.resolve(LocalDate.of(2027, 1, 2)))
+        // A recent date of the same year is taken as written.
+        assertEquals(LocalDate.of(2026, 12, 28), r.date!!.resolve(LocalDate.of(2026, 12, 30)))
+    }
+
+    @Test
+    fun `a date that would be months back is not believed`() {
+        val r = parser.parse("בית עסק נטפליקס חייב את כרטיסך בסך 54.90 שח בתאריך 28/12")
+        // Read on 8 November, 28/12 could only be last year's — almost a year ago. It is some
+        // other number, not the purchase date: dropped, so the capture time is kept.
+        assertNull(r.date!!.resolve(LocalDate.of(2026, 11, 8)))
+        // The edge: 31 days back is still believed, 32 is not.
+        val d = com.tamir.drift.domain.model.ParsedDate(day = 8, month = 10)
+        assertEquals(LocalDate.of(2026, 10, 8), d.resolve(LocalDate.of(2026, 11, 8)))
+        assertNull(d.resolve(LocalDate.of(2026, 11, 9)))
+        // Relative words are never dropped.
+        assertEquals(LocalDate.of(2026, 11, 7), com.tamir.drift.domain.model.ParsedDate(relativeDays = 1).resolve(LocalDate.of(2026, 11, 8)))
     }
 
     @Test

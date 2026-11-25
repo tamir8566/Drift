@@ -82,7 +82,8 @@ fun AllShiftsScreen(onBack: () -> Unit, onEditShift: (Long) -> Unit) {
                         modifier = Modifier.weight(1f),
                     )
                     Text(
-                        stringResource(R.string.work_month_group_total, list.size, Fmt.moneyAgorot(list.sumOf { it.totalAgorot })),
+                        if (list.size == 1) stringResource(R.string.work_month_group_total_one, Fmt.moneyAgorot(list.sumOf { it.totalAgorot }))
+                        else stringResource(R.string.work_month_group_total, list.size, Fmt.moneyAgorot(list.sumOf { it.totalAgorot })),
                         style = DriftType.Label12, color = DriftColors.TextSecondary, maxLines = 1,
                     )
                 }

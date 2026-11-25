@@ -49,16 +49,18 @@ data class GoalUiState(
 
 class GoalViewModel(private val graph: AppGraph) : ViewModel() {
 
-    private val zone = ZoneId.systemDefault()
+    /** Read on every use: a time zone changed while the app runs is picked up by the next computation. */
+    private val zone: ZoneId get() = ZoneId.systemDefault()
 
-    private val work = combine(graph.work.shifts, graph.work.jobs, graph.settings.settings) { shifts, jobs, settings -> Triple(shifts, jobs, settings) }
+    private val work = combine(graph.work.shifts, graph.work.jobs, graph.daySettings) { shifts, jobs, settings -> Triple(shifts, jobs, settings) }
     private val money = combine(graph.transactions.all, graph.savings.goals, graph.savings.deposits) { txs, goals, deposits -> Triple(txs, goals, deposits) }
 
     val state: StateFlow<GoalUiState> = combine(work, money) { (shifts, jobs, settings), (txs, goals, deposits) ->
         val today = LocalDate.now(zone)
         val month = YearMonth.from(today)
-        // Tracking start: month status, week carry-over, history and the long-term pace only
-        // count shifts and transactions from it on.
+        // Tracking start: month status, the week and month carry-over, history and the long-term
+        // pace only count shifts and transactions from it on. Until that day arrives the window
+        // starts at the first launch; on the day itself everything begins clean.
         val window = settings.trackingWindow
         val allShiftSummaries = shifts.toShiftSummaries()
         val shiftSummaries = allShiftSummaries.sinceStart(window)
@@ -70,11 +72,13 @@ class GoalViewModel(private val graph: AppGraph) : ViewModel() {
         val mainPayType = mainJob?.payType ?: PayType.HOURLY
 
         val startDate = window.startDate
+        // Both goals are passed with their history: the carry-over judges each past week and
+        // month by the goal that was in force then.
         val status = GoalCalculator.monthStatus(
-            shiftSummaries, txSummaries, month, today, zone, settings.monthlySavingGoalAgorot, mainRate, startDate, mainPayType,
+            shiftSummaries, txSummaries, month, today, zone, settings.monthlySavingGoal, mainRate, startDate, mainPayType,
         )
-        val week = GoalCalculator.weekStatus(shiftSummaries, today, settings.weeklyIncomeGoalAgorot, startDate)
-        val history = GoalCalculator.history(shiftSummaries, txSummaries, month, settings.monthlySavingGoalAgorot, zone, startDate = startDate)
+        val week = GoalCalculator.weekStatus(shiftSummaries, today, settings.weeklyIncomeGoal, startDate)
+        val history = GoalCalculator.history(shiftSummaries, txSummaries, month, settings.monthlySavingGoal, zone, startDate = startDate, today = today)
 
         val savedThisMonth = Money.toShekels(status.savedAgorot)
         val longTerm = goals.map { g ->
@@ -116,9 +120,5 @@ class GoalViewModel(private val graph: AppGraph) : ViewModel() {
 
     fun deposit(goalId: Long, amount: Double) {
         viewModelScope.launch { graph.savings.deposit(goalId, Money.toAgorot(amount), System.currentTimeMillis()) }
-    }
-
-    fun delete(goalId: Long) {
-        viewModelScope.launch { graph.savings.delete(goalId) }
     }
 }

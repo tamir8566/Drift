@@ -16,6 +16,8 @@ object CsvBuilder {
         val note: String?,
         /** Display name of the transaction kind (expense / refund / not counted). */
         val kindLabel: String = "",
+        /** Display name of the source (Google Pay / SMS / manual); empty = the source's code name. */
+        val sourceLabel: String = "",
     )
 
     /**
@@ -36,7 +38,7 @@ object CsvBuilder {
                     format(t.amountTotal),
                     format(t.myShare),
                     if (t.isShared) "1" else "0",
-                    t.source.name,
+                    row.sourceLabel.ifEmpty { t.source.name },
                     row.kindLabel,
                     row.note.orEmpty(),
                 ).joinToString(",") { escape(it) },

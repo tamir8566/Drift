@@ -53,7 +53,6 @@ import com.tamir.drift.ui.theme.DriftType
 fun WhereScreen(
     initialCategory: String?,
     onOpenCategoryList: (category: String, month: String?) -> Unit,
-    onOpenTransaction: (Long) -> Unit,
 ) {
     val graph = LocalAppGraph.current
     val vm = driftViewModel(key = "where/${initialCategory ?: ""}") { WhereViewModel(graph, initialCategory) }
@@ -179,7 +178,7 @@ fun WhereScreen(
                                 Text("${i + 1}", style = DriftType.Percent11, color = DriftColors.Lime, modifier = Modifier.width(14.dp))
                                 Column(Modifier.weight(1f)) {
                                     Text(m.merchant, style = DriftType.RowTitle, color = DriftColors.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Text(stringResource(R.string.purchases_count, m.count), style = DriftType.Label11, color = DriftColors.TextSecondary)
+                                    Text(if (m.count == 1) stringResource(R.string.purchases_count_one) else stringResource(R.string.purchases_count, m.count), style = DriftType.Label11, color = DriftColors.TextSecondary)
                                 }
                                 Text(stringResource(R.string.amount_with_shekel, Fmt.money(m.total)), style = DriftType.RowAmount, color = DriftColors.Text)
                             }
@@ -201,7 +200,7 @@ fun WhereScreen(
                             Column(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                     Text(r.merchant, style = DriftType.RowTitle, color = DriftColors.Text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                                    Text(stringResource(R.string.purchases_count, r.count), style = DriftType.Label11, color = DriftColors.TextSecondary)
+                                    Text(if (r.count == 1) stringResource(R.string.purchases_count_one) else stringResource(R.string.purchases_count, r.count), style = DriftType.Label11, color = DriftColors.TextSecondary)
                                 }
                                 Text(stringResource(R.string.save_monthly, Fmt.money(r.monthlyTotal), Fmt.money(r.yearlyProjection)), style = DriftType.Label12, color = DriftColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 if (r.onceAWeekMonthlySaving > 0) {
@@ -232,7 +231,7 @@ fun WhereScreen(
                                     }
                                     Text(stringResource(R.string.sub_monthly, Fmt.money(s.amount), Fmt.money(s.yearlyCost)), style = DriftType.Label11, color = DriftColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     Text(
-                                        "${stringResource(R.string.sub_charges, s.charges)} · ${stringResource(R.string.sub_last_charge, Fmt.shortDate(s.lastCharge))}",
+                                        "${if (s.charges == 1) stringResource(R.string.sub_charges_one) else stringResource(R.string.sub_charges, s.charges)} · ${stringResource(R.string.sub_last_charge, Fmt.shortDate(s.lastCharge))}",
                                         style = DriftType.Label11, color = DriftColors.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                     )
                                 }

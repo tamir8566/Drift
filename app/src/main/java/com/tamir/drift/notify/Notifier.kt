@@ -36,9 +36,15 @@ class Notifier(private val context: Context) {
         )
     }
 
+    /**
+     * True when a notification posted now would be shown: the app's notifications are not switched
+     * off in the system settings and, on Android 13+, the notification permission is granted.
+     * Callers that record "already sent" check this first, so nothing is marked as sent unseen.
+     */
     fun canPost(): Boolean =
-        Build.VERSION.SDK_INT < 33 ||
-            ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        NotificationManagerCompat.from(context).areNotificationsEnabled() &&
+            (Build.VERSION.SDK_INT < 33 ||
+                ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED)
 
     /** Budget alerts open the budget screen. */
     fun notifyBudget(id: Int, title: String, text: String) = post(CHANNEL_BUDGET, id, title, text, DeepLink.BUDGET)

@@ -18,6 +18,8 @@ import com.tamir.drift.domain.backup.PrefEntry
 import com.tamir.drift.domain.backup.PrefTypes
 import com.tamir.drift.domain.money.FxRates
 import com.tamir.drift.domain.time.TrackingWindow
+import com.tamir.drift.domain.work.GoalCalculator
+import com.tamir.drift.domain.work.GoalHistory
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
@@ -85,16 +87,27 @@ data class Settings(
     val backupAutoFailedMillis: Long = 0L,
     /** When the home row "אין גיבוי לנתונים" was dismissed (epoch millis; 0 = never). */
     val backupNudgeDismissedMillis: Long = 0L,
+    /** The stored history of the weekly income goal ([GoalHistory] text; "" = never changed). */
+    val weeklyGoalHistory: String = "",
+    /** The stored history of the monthly saving goal ([GoalHistory] text; "" = never changed). */
+    val monthlyGoalHistory: String = "",
 ) {
     /**
      * The window statistics use right now. Until the tracking start arrives, everything since the
      * first launch counts (so the trial month is visible while it is the current month); from the
      * tracking start on, only records from that day count.
      */
-    val trackingWindow: TrackingWindow get() {
-        val today = java.time.LocalDate.now().toEpochDay()
-        return if (today < trackingStartEpochDay) TrackingWindow(firstLaunchEpochDay) else TrackingWindow(trackingStartEpochDay)
-    }
+    val trackingWindow: TrackingWindow get() =
+        TrackingWindow.current(java.time.LocalDate.now().toEpochDay(), trackingStartEpochDay, firstLaunchEpochDay)
+
+    /**
+     * The weekly income goal over time. The carry-over judges every past week by the goal that
+     * was in force in it, so it needs the history and not only today's amount.
+     */
+    val weeklyIncomeGoal: GoalHistory get() = GoalHistory.parse(weeklyGoalHistory, weeklyIncomeGoalAgorot)
+
+    /** The monthly saving goal over time (see [weeklyIncomeGoal]). */
+    val monthlySavingGoal: GoalHistory get() = GoalHistory.parse(monthlyGoalHistory, monthlySavingGoalAgorot)
 
     companion object {
         val DEFAULT_SMS_SENDERS = setOf("max", "MAX", "Max")
@@ -139,6 +152,9 @@ class SettingsStore(private val context: Context) {
         val excludedSubs = stringSetPreferencesKey("excluded_subscriptions")
         val monthlySavingGoal = longPreferencesKey("monthly_saving_goal")
         val weeklyIncomeGoal = longPreferencesKey("weekly_income_goal")
+        /** [GoalHistory] texts: which goal was in force from which day. */
+        val monthlyGoalHistory = stringPreferencesKey("monthly_saving_goal_history")
+        val weeklyGoalHistory = stringPreferencesKey("weekly_income_goal_history")
         val workSummaryEnabled = booleanPreferencesKey("work_summary_enabled")
         val trackingStart = longPreferencesKey("tracking_start_epoch_day")
         /** One-time migration: installs from before the 1.12.2026 default get it applied once. */
@@ -212,6 +228,8 @@ class SettingsStore(private val context: Context) {
             lastBackupMillis = p[Keys.lastBackup] ?: 0L,
             backupAutoFailedMillis = p[Keys.backupAutoFailed] ?: 0L,
             backupNudgeDismissedMillis = p[Keys.backupNudgeDismissed] ?: 0L,
+            weeklyGoalHistory = p[Keys.weeklyGoalHistory] ?: "",
+            monthlyGoalHistory = p[Keys.monthlyGoalHistory] ?: "",
         )
     // Keys that are not part of [Settings] (a list's "last seen" time, …) are written often and
     // must not make every screen recompute.
@@ -229,8 +247,29 @@ class SettingsStore(private val context: Context) {
     suspend fun setAlert100(v: Boolean) = context.dataStore.edit { it[Keys.alert100] = v }
     suspend fun setLastUpdateCheck(v: Long) = context.dataStore.edit { it[Keys.lastUpdateCheck] = v }
     suspend fun setExcludedSubscriptions(v: Set<String>) = context.dataStore.edit { it[Keys.excludedSubs] = v }
-    suspend fun setMonthlySavingGoal(agorot: Long) = context.dataStore.edit { it[Keys.monthlySavingGoal] = agorot.coerceAtLeast(0L) }
-    suspend fun setWeeklyIncomeGoal(agorot: Long) = context.dataStore.edit { it[Keys.weeklyIncomeGoal] = agorot.coerceAtLeast(0L) }
+
+    /**
+     * Sets the monthly saving goal from the current month on. Earlier months keep the goal they
+     * were judged by, so the balance carried from them does not change.
+     */
+    suspend fun setMonthlySavingGoal(agorot: Long, today: java.time.LocalDate = java.time.LocalDate.now()) = context.dataStore.edit {
+        val new = agorot.coerceAtLeast(0L)
+        val old = it[Keys.monthlySavingGoal] ?: Settings.DEFAULT_MONTHLY_SAVING_GOAL
+        it[Keys.monthlyGoalHistory] = GoalHistory.change(it[Keys.monthlyGoalHistory], old, new, today.withDayOfMonth(1).toEpochDay())
+        it[Keys.monthlySavingGoal] = new
+    }
+
+    /**
+     * Sets the weekly income goal from the current (Sunday–Saturday) week on. Earlier weeks keep
+     * the goal they were judged by, so the balance carried from them does not change.
+     */
+    suspend fun setWeeklyIncomeGoal(agorot: Long, today: java.time.LocalDate = java.time.LocalDate.now()) = context.dataStore.edit {
+        val new = agorot.coerceAtLeast(0L)
+        val old = it[Keys.weeklyIncomeGoal] ?: Settings.DEFAULT_WEEKLY_INCOME_GOAL
+        it[Keys.weeklyGoalHistory] = GoalHistory.change(it[Keys.weeklyGoalHistory], old, new, GoalCalculator.weekOf(today).start.toEpochDay())
+        it[Keys.weeklyIncomeGoal] = new
+    }
+
     suspend fun setWorkSummaryEnabled(v: Boolean) = context.dataStore.edit { it[Keys.workSummaryEnabled] = v }
     suspend fun setTrackingStart(epochDay: Long) = context.dataStore.edit { it[Keys.trackingStart] = epochDay }
 

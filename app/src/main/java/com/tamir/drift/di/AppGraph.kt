@@ -10,6 +10,7 @@ import com.tamir.drift.data.repo.MonthSummaryUseCase
 import com.tamir.drift.data.repo.SavingsRepository
 import com.tamir.drift.data.repo.TransactionRepository
 import com.tamir.drift.data.repo.WorkRepository
+import com.tamir.drift.data.settings.Settings
 import com.tamir.drift.data.settings.SettingsStore
 import com.tamir.drift.feedback.DriftSound
 import com.tamir.drift.feedback.SoundPlayer
@@ -19,7 +20,17 @@ import com.tamir.drift.update.UpdateChecker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.launch
+import java.time.Duration
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.ZoneId
 
 /**
  * One short line for the user, shown by the root of the UI. With [actionLabel] and [action] the
@@ -81,6 +92,41 @@ class AppGraph private constructor(val appContext: Context) {
      * followed by leaving the screen, and the undo that the root message runs later.
      */
     val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    private val todayState = MutableStateFlow(LocalDate.now())
+    private val zoneState = MutableStateFlow(ZoneId.systemDefault())
+
+    /**
+     * Today's date. Published again when the day changes — by the midnight timer below while the
+     * app is running, and whenever the main screen returns to the foreground — so a screen that
+     * stays open over midnight moves on to the new day (a new week, a new month, the tracking start).
+     */
+    val today: StateFlow<LocalDate> = todayState
+
+    /** Reads the clock (and the time zone) again. The same values change nothing, so calling it often is free. */
+    fun refreshToday() {
+        zoneState.value = ZoneId.systemDefault()
+        todayState.value = LocalDate.now()
+    }
+
+    /**
+     * The settings, emitted again whenever the day (or the device's time zone) changes. Every
+     * screen whose numbers depend on "today" (the month, the week, the tracking window) builds on
+     * this flow instead of the plain settings and reads the date inside its own computation.
+     */
+    val daySettings: Flow<Settings> by lazy { combine(settings.settings, today, zoneState) { current, _, _ -> current } }
+
+    init {
+        // The midnight timer: wakes a moment after the date changes and publishes the new day.
+        scope.launch {
+            while (true) {
+                val now = LocalDateTime.now()
+                val nextMidnight = now.toLocalDate().plusDays(1).atStartOfDay()
+                delay(Duration.between(now, nextMidnight).toMillis().coerceAtLeast(0L) + 1_000L)
+                refreshToday()
+            }
+        }
+    }
 
     fun showMessage(text: String) {
         messages.tryEmit(UiMessage(text))

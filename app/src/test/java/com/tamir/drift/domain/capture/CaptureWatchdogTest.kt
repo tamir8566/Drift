@@ -65,4 +65,14 @@ class CaptureWatchdogTest {
         // 3 captures a day: the 20 kept rows cover only a week, still at least 7.
         assertTrue(CaptureWatchdog.evaluate(true, captures(20, 4, everyDays = 0.33), now, 0L).alert)
     }
+
+    @Test
+    fun `a missing SMS permission alerts like a disabled listener`() {
+        // Notification access is fine and captures are recent, but SMS capture is in use without its permission.
+        assertTrue(CaptureWatchdog.evaluate(true, captures(10, 0), now, 0L, smsBlocked = true).alert)
+        assertFalse(CaptureWatchdog.evaluate(true, captures(10, 0), now, 0L, smsBlocked = false).alert)
+        // Still at most one alert every few days, and never when the watchdog is switched off.
+        assertFalse(CaptureWatchdog.evaluate(true, captures(10, 0), now, lastAlertMillis = now - day, smsBlocked = true).alert)
+        assertFalse(CaptureWatchdog.evaluate(true, captures(10, 0), now, 0L, enabled = false, smsBlocked = true).alert)
+    }
 }

@@ -73,11 +73,13 @@ import com.tamir.drift.ui.components.SectionHeader
 import com.tamir.drift.ui.components.SwitchRow
 import com.tamir.drift.ui.components.parseDate
 import com.tamir.drift.ui.components.toFieldText
+import com.tamir.drift.ui.deleteLearnedRuleWithUndo
 import com.tamir.drift.ui.format.Fmt
 import com.tamir.drift.ui.theme.DriftColors
 import com.tamir.drift.ui.theme.DriftType
 import com.tamir.drift.update.LocalUpdateController
 import com.tamir.drift.update.UpdateChecker
+import com.tamir.drift.update.textRes
 import kotlinx.coroutines.launch
 import java.time.DayOfWeek
 import java.time.LocalDate
@@ -113,6 +115,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenCalibration: () -> Unit, onOpenDebu
     val smsGranted = remember(refresh) { CaptureStatus.smsGranted(context) }
     val postGranted = remember(refresh) { Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED }
     val installGranted = remember(refresh) { graph.updateChecker.canInstall() }
+    val batteryFree = remember(refresh) { CaptureStatus.batteryUnrestricted(context) }
     val smsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         refresh++
         // Permanently denied → the only way is the app's system settings page.
@@ -199,7 +202,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenCalibration: () -> Unit, onOpenDebu
                     Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
                         PermissionRow(
                             stringResource(R.string.settings_notification_access), stringResource(R.string.settings_notification_access_desc), notifAccess,
-                        ) { context.startActivity(Intent(SysSettings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
+                        ) { context.startActivitySafely(Intent(SysSettings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
                         HairlineDivider()
                         PermissionRow(stringResource(R.string.settings_sms_permission), stringResource(R.string.settings_sms_permission_desc), smsGranted) {
                             if (smsGranted) context.startActivitySafely(appDetailsIntent(context))
@@ -213,6 +216,13 @@ fun SettingsScreen(onBack: () -> Unit, onOpenCalibration: () -> Unit, onOpenDebu
                         HairlineDivider()
                         PermissionRow(stringResource(R.string.settings_install_permission), stringResource(R.string.settings_install_permission_desc), installGranted) {
                             context.startActivitySafely(graph.updateChecker.unknownSourcesIntent())
+                        }
+                        HairlineDivider()
+                        // Not a permission in the strict sense, but capture depends on it the same
+                        // way: a phone that puts the app to sleep stops receiving messages.
+                        PermissionRow(stringResource(R.string.settings_battery), stringResource(R.string.settings_battery_desc), batteryFree) {
+                            if (batteryFree) context.startActivitySafely(appDetailsIntent(context))
+                            else CaptureStatus.requestBatteryExemption(context)
                         }
                     }
                 }
@@ -441,7 +451,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenCalibration: () -> Unit, onOpenDebu
                                 Text(categoryName(r.categoryId), style = DriftType.Label12, color = DriftColors.Lime)
                                 Text(
                                     stringResource(R.string.delete), style = DriftType.Link12, color = DriftColors.Orange,
-                                    modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable { scope.launch { graph.db.merchantRules().delete(r.keyword) } }.padding(4.dp),
+                                    modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable { graph.deleteLearnedRuleWithUndo(r) }.padding(4.dp),
                                 )
                             }
                             if (i < learned.lastIndex) HairlineDivider()
@@ -466,7 +476,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenCalibration: () -> Unit, onOpenDebu
                                 when (val r = graph.updateChecker.check()) {
                                     is UpdateChecker.Result.Available -> { updateStatus = null; updateController.show(r.manifest) }
                                     UpdateChecker.Result.UpToDate -> updateStatus = context.getString(R.string.settings_up_to_date)
-                                    is UpdateChecker.Result.Error -> updateStatus = context.getString(R.string.settings_update_error, r.message)
+                                    is UpdateChecker.Result.Error -> updateStatus = context.getString(R.string.settings_update_error, context.getString(r.failure.textRes()))
                                 }
                             }
                         }
@@ -479,13 +489,14 @@ fun SettingsScreen(onBack: () -> Unit, onOpenCalibration: () -> Unit, onOpenDebu
 
     val s = settings
     if (editSenders && s != null) {
-        ListEditDialog(stringResource(R.string.settings_sms_senders), stringResource(R.string.settings_sms_senders_desc), s.smsSenders, { editSenders = false }) {
-            scope.launch { graph.settings.setSmsSenders(it.ifEmpty { Settings.DEFAULT_SMS_SENDERS }) }; editSenders = false
+        // An empty list is a choice: it switches SMS capture off (the link in the dialog brings the defaults back).
+        ListEditDialog(stringResource(R.string.settings_sms_senders), stringResource(R.string.settings_sms_senders_desc), s.smsSenders, Settings.DEFAULT_SMS_SENDERS, { editSenders = false }) {
+            scope.launch { graph.settings.setSmsSenders(it) }; editSenders = false
         }
     }
     if (editPackages && s != null) {
-        ListEditDialog(stringResource(R.string.settings_packages), stringResource(R.string.settings_packages_desc), s.notificationPackages, { editPackages = false }) {
-            scope.launch { graph.settings.setNotificationPackages(it.ifEmpty { Settings.DEFAULT_PACKAGES }) }; editPackages = false
+        ListEditDialog(stringResource(R.string.settings_packages), stringResource(R.string.settings_packages_desc), s.notificationPackages, Settings.DEFAULT_PACKAGES, { editPackages = false }) {
+            scope.launch { graph.settings.setNotificationPackages(it) }; editPackages = false
         }
     }
     if (editWeekly && s != null) {
@@ -658,12 +669,20 @@ private fun NavRow(title: String, value: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun ListEditDialog(title: String, hint: String, current: Set<String>, onDismiss: () -> Unit, onSave: (Set<String>) -> Unit) {
+private fun ListEditDialog(title: String, hint: String, current: Set<String>, defaults: Set<String>, onDismiss: () -> Unit, onSave: (Set<String>) -> Unit) {
     var text by remember { mutableStateOf(current.joinToString(", ")) }
+    val focus = remember { FocusRequester() }
     DriftDialog(title, onDismiss, stringResource(R.string.save), onConfirm = {
         onSave(text.split(',', '\n').map { it.trim() }.filter { it.isNotEmpty() }.toSet())
     }, dismissText = stringResource(R.string.cancel)) {
-        DriftTextField(text, { text = it }, hint, singleLine = false, minLines = 2)
+        DriftTextField(text, { text = it }, hint, singleLine = false, minLines = 2, focusRequester = focus)
+        // An empty list opens ready for typing; a filled one is left as it is.
+        FocusOnOpen(focus, enabled = current.isEmpty())
+        // Saving the list empty switches this source off; this link fills the built-in values back in.
+        Text(
+            stringResource(R.string.settings_list_defaults), style = DriftType.Link12, color = DriftColors.Lime,
+            modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable { text = defaults.joinToString(", ") }.padding(vertical = 6.dp),
+        )
     }
 }
 

@@ -79,7 +79,13 @@ data class MonthSummary(
     /** Share of the month that has elapsed, in percent (day of month / days in month). */
     val monthElapsedPercent: Double get() = dayOfMonth.toDouble() / daysInMonth * 100.0
 
-    /** PRD: percent used < percent of month elapsed → good pace, otherwise too fast. */
+    /** False when no monthly budget is set: there is no usage and no pace to speak of. */
+    val hasBudget: Boolean get() = totalBudget > 0.0
+
+    /**
+     * PRD: percent used < percent of month elapsed → good pace, otherwise too fast. Only
+     * meaningful with a budget ([hasBudget]); without one the screens show no pace at all.
+     */
     val isGoodPace: Boolean get() = percentUsed < monthElapsedPercent
 
     /** Week vs the previous week, in percent (null when the previous week had no spend). */

@@ -437,7 +437,6 @@ private fun DriftNavHost(nav: NavHostController) {
             WhereScreen(
                 initialCategory = entry.arguments?.getString(Routes.ARG_CATEGORY),
                 onOpenCategoryList = { cat, month -> nav.navigate(Routes.transactions(cat, month)) },
-                onOpenTransaction = { nav.navigate(Routes.detail(it)) },
             )
         }
         composable(Routes.BUDGET) { BudgetScreen(onBack = { nav.popBackStack() }) }

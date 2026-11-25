@@ -124,7 +124,9 @@ fun BudgetScreen(onBack: () -> Unit) {
             StatTriplet(
                 listOf(
                     Stat(stringResource(R.string.home_per_day), if (summary?.isOverBudget == true) stringResource(R.string.home_exceeded) else stringResource(R.string.amount_with_shekel, Fmt.money(summary?.allowedPerDay ?: 0.0)), DriftColors.Lime),
-                    Stat(stringResource(R.string.budget_daily_pace), if (good) stringResource(R.string.home_good_pace) else stringResource(R.string.home_too_fast), if (good) DriftColors.Teal else DriftColors.Orange),
+                    // Without a monthly budget there is no pace: a dash instead of "בקצב טוב".
+                    if (summary?.hasBudget == false) Stat(stringResource(R.string.budget_daily_pace), "—", DriftColors.TextSecondary)
+                    else Stat(stringResource(R.string.budget_daily_pace), if (good) stringResource(R.string.home_good_pace) else stringResource(R.string.home_too_fast), if (good) DriftColors.Teal else DriftColors.Orange),
                     Stat(stringResource(R.string.home_this_week), stringResource(R.string.amount_with_shekel, Fmt.signedMoney(summary?.weekSpent ?: 0.0))),
                 ),
             )

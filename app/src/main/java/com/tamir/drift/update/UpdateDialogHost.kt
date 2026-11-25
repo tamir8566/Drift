@@ -74,7 +74,7 @@ fun UpdateDialogHost() {
     val manifest = controller.pending ?: return
     var downloading by remember(manifest) { mutableStateOf(false) }
     var progress by remember(manifest) { mutableStateOf<DownloadProgress?>(null) }
-    var error by remember(manifest) { mutableStateOf<String?>(null) }
+    var error by remember(manifest) { mutableStateOf<UpdateChecker.Failure?>(null) }
     var needPermission by remember(manifest) { mutableStateOf(false) }
 
     DriftDialog(
@@ -96,7 +96,7 @@ fun UpdateDialogHost() {
                     context.startActivity(graph.updateChecker.installIntent(file))
                     controller.dismiss()
                 } catch (e: Exception) {
-                    error = e.message ?: e.javaClass.simpleName
+                    error = UpdateChecker.failureOf(e)
                 } finally {
                     downloading = false
                 }
@@ -125,8 +125,15 @@ fun UpdateDialogHost() {
             }
         }
         if (needPermission) Text(stringResource(R.string.update_need_permission), style = DriftType.Label12, color = DriftColors.Orange)
-        error?.let { Text(stringResource(R.string.update_failed, it), style = DriftType.Label12, color = DriftColors.Orange) }
+        error?.let { Text(stringResource(R.string.update_failed, stringResource(it.textRes())), style = DriftType.Label12, color = DriftColors.Orange) }
     }
+}
+
+/** The Hebrew line shown for an update failure. */
+internal fun UpdateChecker.Failure.textRes(): Int = when (this) {
+    UpdateChecker.Failure.NO_NETWORK -> R.string.update_error_network
+    UpdateChecker.Failure.SERVER -> R.string.update_error_server
+    UpdateChecker.Failure.OTHER -> R.string.update_error_other
 }
 
 /** True when [text] has at least one Hebrew letter. */

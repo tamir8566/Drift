@@ -51,17 +51,22 @@ class WorkSummaryWorker(appContext: Context, params: WorkerParameters) : Corouti
         val allShifts = graph.work.getShifts().toShiftSummaries()
         val shifts = allShifts.sinceStart(window)
         val startDate = window.startDate
-        val week = GoalCalculator.weekStatus(shifts, today, settings.weeklyIncomeGoalAgorot, startDate)
+        val week = GoalCalculator.weekStatus(shifts, today, settings.weeklyIncomeGoal, startDate)
         // The main job: the one the user marked, else the busiest of the last 30 days, else the oldest.
         val mainJob = JobPicker.mainJob(graph.work.getJobs().toJobSummaries(), allShifts, today.toEpochDay())
         val month = GoalCalculator.monthStatus(
             shifts, graph.db.transactions().getAll().toSummaries().sinceStart(window, zone), YearMonth.from(today), today, zone,
-            settings.monthlySavingGoalAgorot, mainJob?.unitRateAgorot ?: 0L, startDate, mainJob?.payType ?: PayType.HOURLY,
+            settings.monthlySavingGoal, mainJob?.unitRateAgorot ?: 0L, startDate, mainJob?.payType ?: PayType.HOURLY,
         )
         val ctx = applicationContext
         val track = ctx.getString(if (month.onTrack) R.string.goal_on_track_short else R.string.goal_off_track_short)
-        // The same goal the week card shows: the weekly goal after the carry-over from earlier weeks.
-        val text = ctx.getString(R.string.work_summary_text, Fmt.moneyAgorot(week.incomeAgorot), Fmt.moneyAgorot(week.adjustedGoalAgorot), track)
+        // The same goal the week card shows: the weekly goal after the carry-over from all earlier weeks.
+        val text = if (week.isCoveredByCarry) {
+            // Nothing is left to earn this week: "out of 0 ₪" would read like a mistake.
+            ctx.getString(R.string.work_summary_text_covered, Fmt.moneyAgorot(week.incomeAgorot), track)
+        } else {
+            ctx.getString(R.string.work_summary_text, Fmt.moneyAgorot(week.incomeAgorot), Fmt.moneyAgorot(week.adjustedGoalAgorot), track)
+        }
         graph.notifier.notifyWorkSummary(ctx.getString(R.string.work_summary_title), text)
     }
 }

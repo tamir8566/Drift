@@ -68,7 +68,7 @@ class ForeignAndRefundTest {
             AMAZON MKTPLACE
             חייב את כרטיסך 1234 בסך 12.10 דולר
             כדאי לעקוב אחר החיובים כאן:
-            https://link.max.co.il/5f093cf
+            https://link.max.co.il/0000000
         """.trimIndent()
         val r = parser.parse(text, TransactionSource.SMS)
         assertEquals(ParseStatus.PARSED, r.status)

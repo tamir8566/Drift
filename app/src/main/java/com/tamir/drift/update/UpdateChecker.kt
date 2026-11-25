@@ -54,8 +54,12 @@ class UpdateChecker(private val context: Context, private val settings: Settings
     sealed class Result {
         data class Available(val manifest: UpdateManifest) : Result()
         data object UpToDate : Result()
-        data class Error(val message: String) : Result()
+        /** [message] is the technical detail for the log; the screen shows a Hebrew line for [failure]. */
+        data class Error(val failure: Failure, val message: String) : Result()
     }
+
+    /** Why a check or a download failed — what the user is told, instead of the system's English text. */
+    enum class Failure { NO_NETWORK, SERVER, OTHER }
 
     /** Checks only when the last check is older than a day. Returns null when skipped. */
     suspend fun checkIfDue(nowMillis: Long = System.currentTimeMillis()): Result? {
@@ -73,7 +77,7 @@ class UpdateChecker(private val context: Context, private val settings: Settings
             if (manifest.isNewerThan(BuildConfig.VERSION_CODE)) Result.Available(manifest) else Result.UpToDate
         } catch (e: Exception) {
             Log.w(TAG, "update check failed", e)
-            Result.Error(e.message ?: e.javaClass.simpleName)
+            Result.Error(failureOf(e), e.message ?: e.javaClass.simpleName)
         }
     }
 
@@ -155,6 +159,14 @@ class UpdateChecker(private val context: Context, private val settings: Settings
     }
 
     companion object {
+        /** No route to the server → [Failure.NO_NETWORK]; the server answered with an error → [Failure.SERVER]. */
+        fun failureOf(e: Throwable): Failure = when {
+            e is java.net.UnknownHostException || e is java.net.ConnectException ||
+                e is java.net.SocketTimeoutException || e is javax.net.ssl.SSLException -> Failure.NO_NETWORK
+            e.message?.startsWith("HTTP ") == true -> Failure.SERVER
+            else -> Failure.OTHER
+        }
+
         private const val TAG = "Drift.Update"
         const val DAY_MILLIS = 24L * 60 * 60 * 1000
         private const val UNKNOWN_LENGTH_STEP_BYTES = 256L * 1024

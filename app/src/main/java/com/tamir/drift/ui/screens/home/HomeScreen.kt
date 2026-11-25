@@ -101,7 +101,8 @@ fun HomeScreen(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
-    val listenerOn = remember(refresh) { CaptureStatus.listenerEnabled(context) }
+    // A source the user switched off (an empty list in settings) needs no permission and raises no row.
+    val listenerOn = remember(refresh, state.notificationCaptureConfigured) { !state.notificationCaptureConfigured || CaptureStatus.listenerEnabled(context) }
     val smsMissing = remember(refresh, state.smsCaptureConfigured) { state.smsCaptureConfigured && !CaptureStatus.smsGranted(context) }
     val smsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         refresh++
@@ -232,7 +233,8 @@ fun HomeScreen(
                     )
                 }
                 // "On track" with zero taps: the pace word of the budget screen, under the line.
-                if (summary != null) {
+                // Without a monthly budget there is no pace to speak of, so nothing is shown.
+                if (summary != null && summary.hasBudget) {
                     val goodPace = summary.isGoodPace
                     StatusPill(
                         stringResource(if (goodPace) R.string.home_good_pace else R.string.home_too_fast),

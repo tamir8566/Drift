@@ -7,6 +7,8 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Lets the settings row ask the system, in one dialog, not to put the app to sleep (capture runs in the background). -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <!--
         "Data stays on the device": the system's cloud backup and device-to-device transfer are
@@ -24,10 +26,15 @@
         android:theme="@style/Theme.Drift"
         tools:targetApi="35">
 
+        <!--
+            Portrait only: the screens are designed for one narrow column, and a form's typed
+            values live in the composition, so a rotation would rebuild the screen and lose them.
+        -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTask"
+            android:screenOrientation="portrait"
             android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.Drift">
             <intent-filter>

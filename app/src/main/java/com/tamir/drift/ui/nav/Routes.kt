@@ -24,7 +24,6 @@ object Routes {
     const val ARG_DATE = "date"
     const val ARG_TX = "tx"
 
-    fun where(category: String? = null) = if (category == null) WHERE else "$WHERE?$ARG_CATEGORY=$category"
     fun detail(id: Long) = "detail/$id"
 
     /**

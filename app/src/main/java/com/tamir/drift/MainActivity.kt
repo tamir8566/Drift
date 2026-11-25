@@ -59,7 +59,10 @@ class MainActivity : ComponentActivity() {
     /** The "captured" sound is for a capture that arrives while the app is on screen — only then. */
     override fun onStart() {
         super.onStart()
-        AppGraph.get(this).appInForeground = true
+        val graph = AppGraph.get(this)
+        graph.appInForeground = true
+        // Back on screen: if the date changed while the app was away, every screen moves to the new day.
+        graph.refreshToday()
     }
 
     override fun onStop() {

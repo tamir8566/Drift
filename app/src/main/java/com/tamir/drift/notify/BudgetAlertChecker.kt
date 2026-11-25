@@ -22,11 +22,17 @@ class BudgetAlertChecker(
     private val settings: SettingsStore,
     private val notifier: Notifier,
     private val summaryUseCase: MonthSummaryUseCase,
-    private val zone: ZoneId = ZoneId.systemDefault(),
+    private val fixedZone: ZoneId? = null,
 ) {
+    /** The device's zone at the moment of use (this object lives as long as the process). */
+    private val zone: ZoneId get() = fixedZone ?: ZoneId.systemDefault()
+
     suspend fun checkAndNotify(nowMillis: Long = System.currentTimeMillis()) {
         val s = settings.current()
         if (!s.alert80Enabled && !s.alert100Enabled) return
+        // An alert is recorded as sent before it is posted. While notifications are blocked it
+        // would be recorded and never seen, so nothing is done until they can be shown.
+        if (!notifier.canPost()) return
 
         val month = YearMonth.now(zone)
         val summary = summaryUseCase.build(
@@ -63,7 +69,10 @@ class BudgetAlertChecker(
                 AlertLevel.WARNING -> {
                     val t = if (scope == null) context.getString(R.string.alert80_title_total)
                     else context.getString(R.string.alert80_title_category, scope)
-                    t to context.getString(R.string.alert80_text, Fmt.money(alert.remaining), summary.daysLeft)
+                    t to (
+                        if (summary.daysLeft == 1) context.getString(R.string.alert80_text_one, Fmt.money(alert.remaining))
+                        else context.getString(R.string.alert80_text, Fmt.money(alert.remaining), summary.daysLeft)
+                        )
                 }
                 AlertLevel.EXCEEDED -> {
                     val t = if (scope == null) context.getString(R.string.alert100_title_total)

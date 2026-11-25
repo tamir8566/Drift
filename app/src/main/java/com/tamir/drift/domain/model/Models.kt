@@ -89,13 +89,24 @@ data class ParsedDate(
     /**
      * Year rule (PRD note): current year, or the previous one when the day/month would be in the
      * future. Relative dates ("היום"/"אתמול") win over an explicit day/month when both exist.
+     *
+     * A message reports a purchase that just happened, so an explicit date further back than
+     * [maxAgeDays] is not the purchase date — it is some other number that happens to look like
+     * day/month (a phone extension, "1/12" in a promotion). Such a date is dropped (null) and the
+     * caller keeps the capture time, instead of moving the expense months or a year back.
      */
-    fun resolve(today: java.time.LocalDate): java.time.LocalDate? {
+    fun resolve(today: java.time.LocalDate, maxAgeDays: Long = MAX_AGE_DAYS): java.time.LocalDate? {
         relativeDays?.let { return today.minusDays(it.toLong()) }
         val d = day ?: return null
         val m = month ?: return null
-        val candidate = runCatching { java.time.LocalDate.of(today.year, m, d) }.getOrNull() ?: return null
-        return if (candidate.isAfter(today)) candidate.minusYears(1) else candidate
+        val thisYear = runCatching { java.time.LocalDate.of(today.year, m, d) }.getOrNull() ?: return null
+        val candidate = if (thisYear.isAfter(today)) thisYear.minusYears(1) else thisYear
+        return if (candidate.isBefore(today.minusDays(maxAgeDays))) null else candidate
+    }
+
+    companion object {
+        /** How far back a date written in a message is still believed. */
+        const val MAX_AGE_DAYS = 31L
     }
 }
 

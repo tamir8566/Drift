@@ -61,7 +61,10 @@ class WeeklySummaryWorker(appContext: Context, params: WorkerParameters) : Corou
             ctx.getString(R.string.weekly_over, Fmt.money(-summary.remaining))
         }
         val text = buildString {
-            append(ctx.getString(R.string.weekly_spent, Fmt.money(weekly.spent), weekly.count))
+            append(
+                if (weekly.count == 1) ctx.getString(R.string.weekly_spent_one, Fmt.money(weekly.spent))
+                else ctx.getString(R.string.weekly_spent, Fmt.money(weekly.spent), weekly.count),
+            )
             if (categoryName != null) {
                 append(" · ")
                 append(ctx.getString(R.string.weekly_top_category, categoryName, Fmt.money(weekly.topCategoryAmount)))

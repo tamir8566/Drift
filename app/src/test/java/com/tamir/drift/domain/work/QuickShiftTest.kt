@@ -11,7 +11,7 @@ class QuickShiftTest {
     private val sunday: LocalDate = LocalDate.of(2026, 11, 22)
     private var nextId = 1L
 
-    private fun job(id: Long, rate: Long = 38_00L, travel: Long = 0L, active: Boolean = true) =
+    private fun job(id: Long, rate: Long = 50_00L, travel: Long = 0L, active: Boolean = true) =
         JobSummary(id, "job$id", rate, shabbatMultiplier = 1.5, isActive = active, travelPerShiftAgorot = travel)
 
     private fun daily(id: Long, rate: Long = 400_00L) =
@@ -68,16 +68,16 @@ class QuickShiftTest {
 
     @Test
     fun `one tap plan - last shift of the picked job at today's rate`() {
-        val jobs = listOf(job(1, rate = 38_00L, travel = 20_00L))
+        val jobs = listOf(job(1, rate = 50_00L, travel = 20_00L))
         val shifts = listOf(shift(1, sunday.minusDays(7), hours = 8.0, travel = 20_00L))
         val plan = QuickShift.plan(sunday, jobs, shifts)!!
         assertEquals(1L, plan.job.id)
         assertEquals(sunday.toEpochDay(), plan.epochDay)
         assertEquals(8.0, plan.hours, 0.0001)
         assertEquals(false, plan.isShabbatRate)
-        assertEquals(304_00L, plan.wageAgorot)
+        assertEquals(400_00L, plan.wageAgorot)
         assertEquals(20_00L, plan.travelAgorot)
-        assertEquals(324_00L, plan.totalAgorot)
+        assertEquals(420_00L, plan.totalAgorot)
     }
 
     @Test

@@ -149,6 +149,7 @@ fun AllTransactionsScreen(
             val summaryText = when {
                 summary.count > 1 -> stringResource(R.string.tx_summary, summary.count, Fmt.signedMoney(summary.total), Fmt.signedMoney(summary.average))
                 summary.count == 1 -> stringResource(R.string.tx_summary_one, Fmt.signedMoney(summary.total))
+                state.count == 1 -> stringResource(R.string.tx_count_one)
                 else -> stringResource(R.string.tx_count, state.count)
             }
             Text(

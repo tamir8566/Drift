@@ -11,7 +11,6 @@ import com.tamir.drift.domain.classify.MerchantKey
 import com.tamir.drift.domain.model.CategoryKeys
 import com.tamir.drift.domain.model.MerchantRuleModel
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 /** Categories, category budgets and merchant → category rules (built-in + learned). */
@@ -24,17 +23,33 @@ class CategoryRepository(private val context: Context, private val db: DriftData
 
     val rules: Flow<List<MerchantRuleEntity>> = db.merchantRules().observeAll()
 
-    /** Seeds the default categories and the built-in merchant rules on first run. */
+    /**
+     * Makes sure the default categories and the built-in merchant rules exist. Runs on every
+     * start and only adds what is missing (existing rows — also a learned rule that uses the same
+     * keyword — are never touched), so a keyword or a category added to the code in a later
+     * version reaches an install that was seeded long ago.
+     */
     suspend fun ensureSeeded() {
-        if (db.categories().count() == 0) {
-            db.categories().insertAll(defaultCategories(context))
-        }
-        if (db.merchantRules().builtinCount() == 0) {
-            db.merchantRules().insertIgnore(
-                MerchantClassifier.SEED_RULES.map { MerchantRuleEntity(it.keyword, it.categoryKey, Origin.BUILTIN) },
-            )
+        db.categories().insertAll(defaultCategories(context))
+        db.merchantRules().insertIgnore(MerchantClassifier.SEED_RULES.map { it.toBuiltinEntity() })
+    }
+
+    private fun MerchantRuleModel.toBuiltinEntity() = MerchantRuleEntity(keyword, categoryKey, Origin.BUILTIN)
+
+    /**
+     * Deletes a learned rule. A learned rule is stored under the merchant's key, which can be the
+     * very keyword of a built-in rule ("וולט") and then took its place; deleting it brings the
+     * built-in rule back instead of leaving the merchant without any rule.
+     */
+    suspend fun deleteLearnedRule(keyword: String) {
+        db.merchantRules().delete(keyword)
+        MerchantClassifier.SEED_RULES.firstOrNull { it.keyword == keyword }?.let { seed ->
+            db.merchantRules().insertIgnore(listOf(seed.toBuiltinEntity()))
         }
     }
+
+    /** The undo of [deleteLearnedRule]: the learned rule is stored again (over a built-in one with the same keyword). */
+    suspend fun restoreLearnedRule(rule: MerchantRuleEntity) = db.merchantRules().upsert(rule)
 
     suspend fun classifier(): MerchantClassifier = MerchantClassifier(
         db.merchantRules().getAll().map { MerchantRuleModel(it.keyword, it.categoryId, it.origin == Origin.LEARNED) },
@@ -58,11 +73,6 @@ class CategoryRepository(private val context: Context, private val db: DriftData
             .forEach { db.merchantRules().delete(it.keyword) }
         db.merchantRules().upsert(MerchantRuleEntity(keyword, categoryId, Origin.LEARNED))
     }
-
-    suspend fun categoryBudgets(): Map<String, Double> =
-        db.categories().getAll().mapNotNull { c -> c.monthlyBudget?.let { c.id to Money.toShekels(it) } }.toMap()
-
-    suspend fun order(): List<String> = categories.first().map { it.id }
 
     companion object {
         // Palette only (PRD forbids colors outside it): lime, teal, orange and their softer

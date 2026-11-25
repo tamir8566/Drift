@@ -3,6 +3,13 @@ name: Build & release Drift
 on:
   push:
     branches: [main]
+    # A push that only touches documentation is not a new version of the app: nothing is built
+    # and no update is offered to the phones. (Any other file in the same push builds as usual.)
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
   workflow_dispatch:
 
 permissions:
@@ -42,20 +49,24 @@ jobs:
         run: chmod +x gradlew
 
       # ------------------------------------------------------------------
-      # Signing: decode the keystore from the secret into a temp file. When
-      # the secrets are missing the build falls back to the debug key
-      # (app/build.gradle.kts), so the job still produces an installable APK.
+      # Signing: decode the keystore from the secret into a temp file.
+      # This workflow publishes to the phones, so it never continues without
+      # the release key: an APK signed with the debug key (the local fallback
+      # in app/build.gradle.kts) would be offered as an update and then refuse
+      # to install over the installed app.
       # ------------------------------------------------------------------
       - name: Decode signing keystore
         id: keystore
         env:
           DRIFT_KEYSTORE_B64: ${{ secrets.DRIFT_KEYSTORE_B64 }}
+          DRIFT_KEYSTORE_PASSWORD: ${{ secrets.DRIFT_KEYSTORE_PASSWORD }}
+          DRIFT_KEY_ALIAS: ${{ secrets.DRIFT_KEY_ALIAS }}
+          DRIFT_KEY_PASSWORD: ${{ secrets.DRIFT_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          if [ -z "${DRIFT_KEYSTORE_B64:-}" ]; then
-            echo "::warning::DRIFT_KEYSTORE_B64 is not set – the APK will be signed with the DEBUG key."
-            echo "path=" >> "$GITHUB_OUTPUT"
-            exit 0
+          if [ -z "${DRIFT_KEYSTORE_B64:-}" ] || [ -z "${DRIFT_KEYSTORE_PASSWORD:-}" ] || [ -z "${DRIFT_KEY_ALIAS:-}" ] || [ -z "${DRIFT_KEY_PASSWORD:-}" ]; then
+            echo "::error::A signing secret is missing (DRIFT_KEYSTORE_B64 / DRIFT_KEYSTORE_PASSWORD / DRIFT_KEY_ALIAS / DRIFT_KEY_PASSWORD). Nothing is published without the release key."
+            exit 1
           fi
           KS="$RUNNER_TEMP/drift-release.jks"
           echo "$DRIFT_KEYSTORE_B64" | tr -d '\n\r ' | base64 -d > "$KS"
@@ -84,6 +95,16 @@ jobs:
           cp "$APK" "drift-latest.apk"
           echo "path=drift-${VERSION_CODE}.apk" >> "$GITHUB_OUTPUT"
           ls -la drift-*.apk
+          # Last line of defence: an APK signed with the debug key is never published.
+          APKSIGNER="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}/build-tools/35.0.0/apksigner"
+          if [ -x "$APKSIGNER" ]; then
+            CERT=$("$APKSIGNER" verify --print-certs "drift-${VERSION_CODE}.apk" | grep "certificate DN" || true)
+            echo "$CERT"
+            if echo "$CERT" | grep -qi "Android Debug"; then
+              echo "::error::The APK is signed with the debug key – not publishing it."
+              exit 1
+            fi
+          fi
 
       # ------------------------------------------------------------------
       # Supabase Storage: create the public bucket if missing, upload both
@@ -137,18 +158,18 @@ jobs:
           upload "drift-${VERSION_CODE}.apk" "drift-${VERSION_CODE}.apk" "application/vnd.android.package-archive"
           upload "drift-latest.apk" "drift-latest.apk" "application/vnd.android.package-archive"
 
-          # 3) Manifest
+          # 3) Manifest. Written by jq, so whatever the commit subject holds (quotes, backslashes,
+          #    Hebrew) is escaped into valid JSON; the notes are cut to 200 characters.
           APK_URL="${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/drift-${VERSION_CODE}.apk"
-          NOTES=$(git log -1 --pretty=%s | head -c 200 | sed 's/"/\\"/g')
-          cat > manifest.json <<EOF
-          {
-            "versionCode": ${VERSION_CODE},
-            "versionName": "1.0.${VERSION_CODE}",
-            "apkUrl": "${APK_URL}",
-            "notes": "${NOTES}"
-          }
-          EOF
+          NOTES=$(git log -1 --pretty=%s)
+          jq -n \
+            --argjson versionCode "${VERSION_CODE}" \
+            --arg versionName "1.0.${VERSION_CODE}" \
+            --arg apkUrl "${APK_URL}" \
+            --arg notes "${NOTES}" \
+            '{versionCode: $versionCode, versionName: $versionName, apkUrl: $apkUrl, notes: ($notes[0:200])}' > manifest.json
           cat manifest.json
+          jq -e '.versionCode > 0 and (.apkUrl | length) > 0' manifest.json > /dev/null
           upload "manifest.json" "manifest.json" "application/json"
 
           # 4) Verify the public manifest is reachable.

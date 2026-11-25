@@ -38,13 +38,18 @@ class DailyCheckWorker(appContext: Context, params: WorkerParameters) : Coroutin
         val settings = graph.settings.current()
         val now = System.currentTimeMillis()
         val verdict = CaptureWatchdog.evaluate(
-            listenerEnabled = CaptureStatus.listenerEnabled(ctx),
+            // A source the user switched off (an empty list) needs no permission.
+            listenerEnabled = settings.notificationPackages.isEmpty() || CaptureStatus.listenerEnabled(ctx),
             captureTimes = graph.db.rawCaptures().latestTimes(CaptureProcessor.RAW_LOG_SIZE),
             nowMillis = now,
             lastAlertMillis = settings.watchdogLastAlertMillis,
             enabled = settings.captureWatchdogEnabled,
+            smsBlocked = settings.smsSenders.isNotEmpty() && !CaptureStatus.smsGranted(ctx),
         )
         if (!verdict.alert) return
+        // Without permission to notify nothing would be shown: do not record an alert that was
+        // never seen, so it is posted as soon as notifications are allowed.
+        if (!graph.notifier.canPost()) return
         // Recorded before posting, so a crash never repeats the notification.
         graph.settings.setWatchdogLastAlert(now)
         // Nothing captured ever: count from the day the app was first used.
@@ -63,6 +68,8 @@ class DailyCheckWorker(appContext: Context, params: WorkerParameters) : Coroutin
         val settings = graph.settings.current()
         if (settings.taxReminderYear == today.year || settings.taxCoordinationYear == today.year) return
         if (graph.work.getJobs().count { it.isActive } < 2) return
+        // Not recorded while notifications are blocked: the reminder waits until it can be shown.
+        if (!graph.notifier.canPost()) return
         graph.settings.setTaxReminderYear(today.year)
         val ctx = applicationContext
         graph.notifier.notifyReminder(

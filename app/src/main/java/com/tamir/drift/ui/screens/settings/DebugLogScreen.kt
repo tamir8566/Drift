@@ -62,6 +62,7 @@ fun DebugLogScreen(onBack: () -> Unit, onOpenTransaction: (Long) -> Unit) {
                         c.result.startsWith(CaptureProcessor.RESULT_REFUND) -> stringResource(R.string.debug_result_refund) to DriftColors.Teal
                         c.result.startsWith(CaptureProcessor.RESULT_DUPLICATE) -> stringResource(R.string.debug_result_duplicate) to DriftColors.TextSecondary
                         c.result.startsWith(CaptureProcessor.RESULT_UNPARSED) -> stringResource(R.string.debug_result_unparsed) to DriftColors.Orange
+                        c.result.startsWith(CaptureProcessor.RESULT_IGNORED) -> stringResource(R.string.debug_result_ignored) to DriftColors.TextSecondary
                         c.result.startsWith(CaptureProcessor.RESULT_FAILED) -> stringResource(R.string.debug_result_failed) to DriftColors.Orange
                         else -> "—" to DriftColors.TextDim
                     }

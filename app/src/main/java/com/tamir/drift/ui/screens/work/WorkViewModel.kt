@@ -83,22 +83,25 @@ data class WorkUiState(
 
 class WorkViewModel(private val graph: AppGraph) : ViewModel() {
 
-    private val zone = ZoneId.systemDefault()
+    /** Read on every use: a time zone changed while the app runs is picked up by the next computation. */
+    private val zone: ZoneId get() = ZoneId.systemDefault()
     private val calendarMonth = MutableStateFlow(YearMonth.now(zone))
 
     val state: StateFlow<WorkUiState> = combine(
         graph.work.shifts,
         graph.work.jobs,
         graph.work.plannedDays,
-        graph.settings.settings,
+        graph.daySettings,
         calendarMonth,
     ) { shifts, jobs, planned, settings, calMonth ->
         val today = LocalDate.now(zone)
         val month = YearMonth.from(today)
-        // Tracking start: every total (month, week, hours, job cards) only counts shifts from it on.
+        // Tracking start: every total (month, week, hours, job cards) only counts shifts from it on,
+        // and only through today — a shift entered for a later day is not earned yet.
         // The calendar dots and the recent-shifts list still show all shifts.
         val window = settings.trackingWindow
-        val counted = shifts.filter { window.includes(it.date) }
+        val todayDay = today.toEpochDay()
+        val counted = shifts.filter { window.includes(it.date) && it.date <= todayDay }
         val summaries = counted.toShiftSummaries()
         val week = GoalCalculator.weekOf(today)
         val first = month.atDay(1).toEpochDay()
@@ -204,9 +207,5 @@ class WorkViewModel(private val graph: AppGraph) : ViewModel() {
 
     fun setJobActive(id: Long, active: Boolean) {
         viewModelScope.launch { graph.work.setJobActive(id, active) }
-    }
-
-    fun deleteShift(id: Long) {
-        viewModelScope.launch { graph.work.deleteShift(id) }
     }
 }

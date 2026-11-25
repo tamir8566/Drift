@@ -35,6 +35,15 @@ data class TrackingWindow(val startEpochDay: Long?) {
 
         /** A window without a start — nothing is filtered. */
         val ALL = TrackingWindow(null)
+
+        /**
+         * The window statistics use on [todayEpochDay]. Until the tracking start arrives, everything
+         * since the first launch counts (the trial period stays visible while it is running). From
+         * the tracking start on, only records from that day count: every total, comparison and
+         * carry-over begins clean on that day.
+         */
+        fun current(todayEpochDay: Long, trackingStartEpochDay: Long, firstLaunchEpochDay: Long): TrackingWindow =
+            if (todayEpochDay < trackingStartEpochDay) TrackingWindow(firstLaunchEpochDay) else TrackingWindow(trackingStartEpochDay)
     }
 }
 

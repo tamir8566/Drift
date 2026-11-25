@@ -6,11 +6,11 @@ import org.junit.Test
 
 class ShiftCalculatorTest {
 
-    private val rate = 38_00L // 38 ₪ per hour
+    private val rate = 50_00L // 50 ₪ per hour
 
     @Test
     fun `an edited shift keeps its stored rate unless hours or job change`() {
-        val stored = RateSnapshot(38_00L, 1.5)
+        val stored = RateSnapshot(50_00L, 1.5)
         val current = RateSnapshot(42_00L, 2.0)
         assertEquals(stored, ShiftCalculator.rateForEdit(current, stored, sameJob = true, sameHours = true))
         assertEquals(current, ShiftCalculator.rateForEdit(current, stored, sameJob = true, sameHours = false))
@@ -21,9 +21,9 @@ class ShiftCalculatorTest {
 
     @Test
     fun `amount from a rate snapshot for both pay types`() {
-        val snap = RateSnapshot(38_00L, 1.5)
-        assertEquals(304_00L, ShiftCalculator.amount(PayType.HOURLY, 8.0, snap, false))
-        assertEquals(456_00L, ShiftCalculator.amount(PayType.HOURLY, 8.0, snap, true))
+        val snap = RateSnapshot(50_00L, 1.5)
+        assertEquals(400_00L, ShiftCalculator.amount(PayType.HOURLY, 8.0, snap, false))
+        assertEquals(600_00L, ShiftCalculator.amount(PayType.HOURLY, 8.0, snap, true))
         val daily = RateSnapshot(400_00L, 1.5)
         assertEquals(400_00L, ShiftCalculator.amount(PayType.DAILY, 0.0, daily, false))
         assertEquals(600_00L, ShiftCalculator.amount(PayType.DAILY, 0.0, daily, true))
@@ -41,14 +41,14 @@ class ShiftCalculatorTest {
 
     @Test
     fun `regular shift is hours times rate`() {
-        assertEquals(304_00L, ShiftCalculator.amount(8.0, rate, false, 1.5))
-        assertEquals(247_00L, ShiftCalculator.amount(6.5, rate, false, 1.5))
+        assertEquals(400_00L, ShiftCalculator.amount(8.0, rate, false, 1.5))
+        assertEquals(325_00L, ShiftCalculator.amount(6.5, rate, false, 1.5))
     }
 
     @Test
     fun `shabbat shift applies the multiplier`() {
-        assertEquals(456_00L, ShiftCalculator.amount(8.0, rate, true, 1.5))
-        assertEquals(608_00L, ShiftCalculator.amount(8.0, rate, true, 2.0))
+        assertEquals(600_00L, ShiftCalculator.amount(8.0, rate, true, 1.5))
+        assertEquals(800_00L, ShiftCalculator.amount(8.0, rate, true, 2.0))
     }
 
     @Test
@@ -61,7 +61,7 @@ class ShiftCalculatorTest {
     @Test
     fun `manual amount overrides the computed one`() {
         assertEquals(350_00L, ShiftCalculator.resolve(8.0, rate, false, 1.5, 350_00L))
-        assertEquals(304_00L, ShiftCalculator.resolve(8.0, rate, false, 1.5, null))
+        assertEquals(400_00L, ShiftCalculator.resolve(8.0, rate, false, 1.5, null))
     }
 
     @Test
@@ -79,8 +79,8 @@ class ShiftCalculatorTest {
 
     @Test
     fun `hourly resolve with pay type matches the classic one`() {
-        assertEquals(304_00L, ShiftCalculator.resolve(PayType.HOURLY, 8.0, rate, 999_00L, false, 1.5, null))
-        assertEquals(456_00L, ShiftCalculator.resolve(PayType.HOURLY, 8.0, rate, 999_00L, true, 1.5, null))
+        assertEquals(400_00L, ShiftCalculator.resolve(PayType.HOURLY, 8.0, rate, 999_00L, false, 1.5, null))
+        assertEquals(600_00L, ShiftCalculator.resolve(PayType.HOURLY, 8.0, rate, 999_00L, true, 1.5, null))
         assertEquals(350_00L, ShiftCalculator.resolve(PayType.HOURLY, 8.0, rate, 999_00L, false, 1.5, 350_00L))
     }
 
@@ -90,10 +90,10 @@ class ShiftCalculatorTest {
 
     @Test
     fun `hourly day total is wage plus travel`() {
-        // 8 h × 38 ₪ = 304 ₪, + 22 ₪ travel.
-        assertEquals(326_00L, ShiftCalculator.dayTotal(PayType.HOURLY, 8.0, rate, 0L, false, 1.5, null, travel, true))
+        // 8 h × 50 ₪ = 400 ₪, + 22 ₪ travel.
+        assertEquals(422_00L, ShiftCalculator.dayTotal(PayType.HOURLY, 8.0, rate, 0L, false, 1.5, null, travel, true))
         // A job without travel: the total is the wage alone.
-        assertEquals(304_00L, ShiftCalculator.dayTotal(PayType.HOURLY, 8.0, rate, 0L, false, 1.5, null, 0L, true))
+        assertEquals(400_00L, ShiftCalculator.dayTotal(PayType.HOURLY, 8.0, rate, 0L, false, 1.5, null, 0L, true))
     }
 
     @Test
@@ -103,8 +103,8 @@ class ShiftCalculatorTest {
 
     @Test
     fun `shabbat multiplier is not applied to travel`() {
-        // 304 × 1.5 = 456, + 22 (not 33).
-        assertEquals(478_00L, ShiftCalculator.dayTotal(PayType.HOURLY, 8.0, rate, 0L, true, 1.5, null, travel, true))
+        // 400 × 1.5 = 600, + 22 (not 33).
+        assertEquals(622_00L, ShiftCalculator.dayTotal(PayType.HOURLY, 8.0, rate, 0L, true, 1.5, null, travel, true))
         // 400 × 1.5 = 600, + 22.
         assertEquals(622_00L, ShiftCalculator.dayTotal(PayType.DAILY, 0.0, rate, 400_00L, true, 1.5, null, travel, true))
         assertEquals(travel, ShiftCalculator.travel(travel, true))
@@ -120,7 +120,7 @@ class ShiftCalculatorTest {
 
     @Test
     fun `travel toggle off gives the wage alone`() {
-        assertEquals(304_00L, ShiftCalculator.dayTotal(PayType.HOURLY, 8.0, rate, 0L, false, 1.5, null, travel, false))
+        assertEquals(400_00L, ShiftCalculator.dayTotal(PayType.HOURLY, 8.0, rate, 0L, false, 1.5, null, travel, false))
         assertEquals(350_00L, ShiftCalculator.dayTotal(PayType.HOURLY, 8.0, rate, 0L, false, 1.5, 350_00L, travel, false))
         assertEquals(0L, ShiftCalculator.travel(travel, false))
         // A negative amount never reduces the wage.

@@ -7,6 +7,12 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
+/**
+ * The schema version. Raising it requires a migration from the previous version in
+ * [DriftDatabase.MIGRATIONS]; without one the app refuses to open the database.
+ */
+const val DRIFT_DB_VERSION = 5
+
 @Database(
     entities = [
         TransactionEntity::class,
@@ -22,7 +28,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ShiftEntity::class,
         PlannedDayEntity::class,
     ],
-    version = 5,
+    version = DRIFT_DB_VERSION,
     exportSchema = false,
 )
 abstract class DriftDatabase : RoomDatabase() {
@@ -127,13 +133,17 @@ abstract class DriftDatabase : RoomDatabase() {
         /** The database file name (under the app's databases directory). */
         const val NAME = "drift.db"
 
-        private val MIGRATIONS: Array<Migration> get() = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+        /** Every version step up to [DRIFT_DB_VERSION] (a unit test checks that none is missing). */
+        val MIGRATIONS: Array<Migration> get() = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
 
+        /**
+         * There is no destructive fallback on purpose. A version step without a migration (or a
+         * database written by a newer build) makes opening fail loudly instead of silently
+         * erasing the user's data; the data stays on the device until a fixed build is installed.
+         */
         fun build(context: Context): DriftDatabase =
             Room.databaseBuilder(context.applicationContext, DriftDatabase::class.java, NAME)
                 .addMigrations(*MIGRATIONS)
-                // Safety net for any other version jump (was already the policy before v2).
-                .fallbackToDestructiveMigration()
                 .build()
 
         /**

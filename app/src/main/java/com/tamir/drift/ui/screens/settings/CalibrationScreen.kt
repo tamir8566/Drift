@@ -21,6 +21,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -40,10 +41,12 @@ import com.tamir.drift.domain.model.ParseStatus
 import com.tamir.drift.domain.model.TransactionSource
 import com.tamir.drift.domain.model.UserPattern
 import com.tamir.drift.domain.parser.AmountParser
+import com.tamir.drift.domain.parser.MarkLocator
 import com.tamir.drift.domain.parser.PatternBuilder
 import com.tamir.drift.domain.parser.TextNormalizer
 import com.tamir.drift.domain.parser.TransactionTextParser
 import com.tamir.drift.ui.LocalAppGraph
+import com.tamir.drift.ui.announceTestCapture
 import com.tamir.drift.ui.components.Chip
 import com.tamir.drift.ui.components.EmptyNote
 import com.tamir.drift.ui.components.GlassCard
@@ -52,6 +55,7 @@ import com.tamir.drift.ui.components.PrimaryButton
 import com.tamir.drift.ui.components.ScreenHeader
 import com.tamir.drift.ui.components.SecondaryButton
 import com.tamir.drift.ui.components.SectionHeader
+import com.tamir.drift.ui.deletePatternWithUndo
 import com.tamir.drift.ui.format.Fmt
 import com.tamir.drift.ui.theme.DriftColors
 import com.tamir.drift.ui.theme.DriftType
@@ -77,6 +81,10 @@ fun CalibrationScreen(onBack: () -> Unit, prefillTransactionId: Long? = null) {
     var field by remember { mutableStateOf(TextFieldValue("")) }
     var amountMark by remember { mutableStateOf<String?>(null) }
     var merchantMark by remember { mutableStateOf<String?>(null) }
+    // Where each mark begins in the field's text (-1 = unknown): the same characters may appear more
+    // than once ("12" in the date and as the amount), and the pattern must be built on the marked ones.
+    var amountMarkStart by remember { mutableIntStateOf(-1) }
+    var merchantMarkStart by remember { mutableIntStateOf(-1) }
     var message by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(prefillTransactionId) {
@@ -99,10 +107,14 @@ fun CalibrationScreen(onBack: () -> Unit, prefillTransactionId: Long? = null) {
         if (field.text.isBlank()) null else TransactionTextParser(userPatterns).parse(field.text, source)
     }
 
-    fun selectedText(): String? {
+    /** The marked text (trimmed) and where it begins in the field. */
+    fun selectedText(): Pair<String, Int>? {
         val sel = field.selection
         if (sel.collapsed) return null
-        return field.text.substring(sel.min, sel.max).trim().takeIf { it.isNotEmpty() }
+        val raw = field.text.substring(sel.min, sel.max)
+        val trimmed = raw.trim()
+        if (trimmed.isEmpty()) return null
+        return trimmed to (sel.min + raw.indexOf(trimmed))
     }
 
     Column(
@@ -146,15 +158,15 @@ fun CalibrationScreen(onBack: () -> Unit, prefillTransactionId: Long? = null) {
                 val none = stringResource(R.string.calib_parsed_none)
                 Text(stringResource(R.string.calib_parsed_amount, parsed?.let { p -> p.amount?.let { a -> if (p.isForeign) Fmt.foreign(Currencies.toMinor(a), p.currency) else Fmt.money(a) } } ?: none), style = DriftType.Body, color = if (parsed?.amount != null) DriftColors.Lime else DriftColors.Orange)
                 Text(stringResource(R.string.calib_parsed_merchant, parsed?.merchant ?: none), style = DriftType.Body, color = if (parsed?.merchant != null) DriftColors.Text else DriftColors.Orange, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                if (parsed != null) Text(stringResource(R.string.calib_parser, parsed.parserName), style = DriftType.Label11, color = DriftColors.TextDim)
+                if (parsed != null) Text(stringResource(R.string.calib_parser, parserLabel(parsed.parserName)), style = DriftType.Label11, color = DriftColors.TextDim)
             }
         }
 
         // Marking
         Text(stringResource(R.string.calib_mark_hint), style = DriftType.Label11, color = DriftColors.TextSecondary)
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            SecondaryButton(stringResource(R.string.calib_mark_amount), modifier = Modifier.weight(1f), onClick = { selectedText()?.let { amountMark = it } })
-            SecondaryButton(stringResource(R.string.calib_mark_merchant), modifier = Modifier.weight(1f), onClick = { selectedText()?.let { merchantMark = it } })
+            SecondaryButton(stringResource(R.string.calib_mark_amount), modifier = Modifier.weight(1f), onClick = { selectedText()?.let { amountMark = it.first; amountMarkStart = it.second } })
+            SecondaryButton(stringResource(R.string.calib_mark_merchant), modifier = Modifier.weight(1f), onClick = { selectedText()?.let { merchantMark = it.first; merchantMarkStart = it.second } })
         }
         if (amountMark != null) Text(stringResource(R.string.calib_marked_amount, amountMark!!), style = DriftType.Label12, color = DriftColors.Lime)
         if (merchantMark != null) Text(stringResource(R.string.calib_marked_merchant, merchantMark!!), style = DriftType.Label12, color = DriftColors.Lime, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -166,9 +178,12 @@ fun CalibrationScreen(onBack: () -> Unit, prefillTransactionId: Long? = null) {
             if (amountDigits == null || AmountParser.parseNumber(amountDigits) <= 0.0) {
                 message = "amount"
             } else {
-                val aStart = clean.indexOf(amountDigits)
+                // The digits may sit inside a longer mark ("216.79 שח"); the pattern is anchored on
+                // the marked occurrence of them, not on the first place the same digits appear.
+                val digitsAt = if (amountMarkStart >= 0) amountMarkStart + a.indexOf(amountDigits) else -1
+                val aStart = MarkLocator.locate(field.text, clean, amountDigits, digitsAt)
                 val aRange = aStart until aStart + amountDigits.length
-                val mRange = merchantMark?.let { m -> val i = clean.indexOf(m); if (i >= 0) i until i + m.length else null }
+                val mRange = merchantMark?.let { m -> val i = MarkLocator.locate(field.text, clean, m, merchantMarkStart); if (i >= 0) i until i + m.length else null }
                 if (aStart < 0) {
                     message = "amount"
                 } else {
@@ -190,7 +205,9 @@ fun CalibrationScreen(onBack: () -> Unit, prefillTransactionId: Long? = null) {
         if (parsed != null && parsed.status != ParseStatus.UNPARSED) {
             SecondaryButton(stringResource(R.string.calib_test_as_tx), color = DriftColors.TextSecondary, onClick = {
                 scope.launch {
-                    graph.captureProcessor.process(source, "calibration", field.text, System.currentTimeMillis())
+                    // The real capture path: what it adds is a real expense, so the message offers to take it back.
+                    val outcome = graph.captureProcessor.process(source, "calibration", field.text, System.currentTimeMillis())
+                    graph.announceTestCapture(outcome)
                     onBack()
                 }
             })
@@ -209,7 +226,7 @@ fun CalibrationScreen(onBack: () -> Unit, prefillTransactionId: Long? = null) {
                         }
                         Text(
                             stringResource(R.string.delete), style = DriftType.Link12, color = DriftColors.Orange,
-                            modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable { scope.launch { graph.db.parsePatterns().delete(p.id) } }.padding(4.dp),
+                            modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable { graph.deletePatternWithUndo(p) }.padding(4.dp),
                         )
                     }
                     if (i < patterns.lastIndex) HairlineDivider()
@@ -217,5 +234,18 @@ fun CalibrationScreen(onBack: () -> Unit, prefillTransactionId: Long? = null) {
             }
         }
         Spacer(Modifier.height(12.dp))
+    }
+}
+
+/** The parser's internal name ("max-sms", "user-pattern#3", …) as a Hebrew label. */
+@Composable
+private fun parserLabel(name: String): String {
+    val base = name.removeSuffix("(fallback)")
+    return when {
+        base == "max-sms" -> stringResource(R.string.calib_parser_sms)
+        base == "google-pay" -> stringResource(R.string.calib_parser_gpay)
+        base.startsWith("user-pattern") -> stringResource(R.string.calib_parser_user)
+        base == "generic" -> stringResource(R.string.calib_parser_generic)
+        else -> stringResource(R.string.calib_parsed_none)
     }
 }

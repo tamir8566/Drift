@@ -13,6 +13,7 @@ import com.tamir.drift.data.db.txnKind
 import com.tamir.drift.data.repo.toSummary
 import com.tamir.drift.di.AppGraph
 import com.tamir.drift.domain.export.CsvBuilder
+import com.tamir.drift.domain.model.TransactionSource
 import com.tamir.drift.domain.model.TxnKind
 import com.tamir.drift.domain.search.TxSearch
 import com.tamir.drift.domain.time.MonthPeriod
@@ -57,7 +58,8 @@ class AllTransactionsViewModel(
     initialUnparsedOnly: Boolean = false,
 ) : ViewModel() {
 
-    private val zone = ZoneId.systemDefault()
+    /** Read on every use: a time zone changed while the app runs is picked up by the next computation. */
+    private val zone: ZoneId get() = ZoneId.systemDefault()
     private val filter = MutableStateFlow(
         TxFilter(
             category = initialCategory,
@@ -66,7 +68,7 @@ class AllTransactionsViewModel(
         ),
     )
 
-    val state: StateFlow<AllTxUiState> = combine(graph.transactions.all, graph.categories.categories, filter, graph.settings.settings) { txs, cats, f, settings ->
+    val state: StateFlow<AllTxUiState> = combine(graph.transactions.all, graph.categories.categories, filter, graph.daySettings) { txs, cats, f, settings ->
         val months = txs.map { YearMonth.from(Instant.ofEpochMilli(it.timestamp).atZone(zone)) }.distinct().sortedDescending()
         val monthPeriod = f.month?.let { MonthPeriod(it, zone) }
         // Free text over merchant / note / raw text; a number also finds amounts ("214" → 214 ₪).
@@ -113,7 +115,14 @@ class AllTransactionsViewModel(
                         TxnKind.TRANSFER -> R.string.kind_transfer
                     },
                 )
-                CsvBuilder.Row(t.toSummary(), categoryNames[t.categoryId] ?: t.categoryId, t.note, kindLabel)
+                val sourceLabel = context.getString(
+                    when (t.source) {
+                        TransactionSource.GPAY.name -> R.string.source_gpay
+                        TransactionSource.SMS.name -> R.string.source_sms
+                        else -> R.string.source_manual
+                    },
+                )
+                CsvBuilder.Row(t.toSummary(), categoryNames[t.categoryId] ?: t.categoryId, t.note, kindLabel, sourceLabel)
             }
         val headers = listOf(
             R.string.csv_date, R.string.csv_merchant, R.string.csv_category, R.string.csv_amount_full,

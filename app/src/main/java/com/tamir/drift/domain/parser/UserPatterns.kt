@@ -4,13 +4,14 @@ import com.tamir.drift.domain.model.ParseStatus
 import com.tamir.drift.domain.model.ParsedTransaction
 import com.tamir.drift.domain.model.TransactionSource
 import com.tamir.drift.domain.model.UserPattern
+import com.tamir.drift.domain.money.Currencies
 
 /**
  * Builds a reusable regex from a sample text in which the user marked the amount and the
  * merchant (calibration screen).
  *
  * Everything outside the marked spans is kept as literal text, except that digit runs are
- * generalised to `\d+` (dates, card numbers, times) and whitespace to `\s+`, so the
+ * generalised to `\d+` (dates, card numbers, times) and whitespace to `\s*`, so the
  * pattern matches future messages of the same template.
  */
 object PatternBuilder {
@@ -83,11 +84,14 @@ class UserPatternMatcher(private val patterns: List<UserPattern>) {
             val amount = AmountParser.parseNumber(amountRaw).takeIf { it > 0 } ?: continue
             val merchant = TextNormalizer.cleanMerchant(groupOrNull(match, PatternBuilder.GROUP_MERCHANT))
             val last4 = groupOrNull(match, PatternBuilder.GROUP_LAST4)
+            // The pattern only locates the number. The currency is read from the marker next to
+            // that same number, so a saved pattern never turns "$12.99" into 12.99 shekels.
+            val marked = AmountParser.find(clean)?.takeIf { it.isForeign && kotlin.math.abs(it.amount - amount) < 0.005 }
             return ParsedTransaction(
                 amount = amount,
                 merchant = merchant,
                 last4 = last4,
-                currency = "ILS",
+                currency = marked?.currency ?: Currencies.ILS,
                 status = if (merchant != null) ParseStatus.PARSED else ParseStatus.AMOUNT_ONLY,
                 parserName = "user-pattern#${pattern.id}",
             )

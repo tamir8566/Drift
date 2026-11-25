@@ -13,7 +13,7 @@ import com.tamir.drift.domain.model.ParsedTransaction
  * פז אפליקציית יילו
  * חייב את כרטיסך 1234 בסך 216.79 שח
  * כדאי לעקוב אחר החיובים כאן:
- * https://link.max.co.il/5f093cf
+ * https://link.max.co.il/0000000
  * ```
  * Merchant = text between "בית עסק" and "חייב את כרטיסך"; amount = number after "בסך"
  * followed by a shekel marker; date = "היום DD/MM" / "אתמול" / "DD/MM"; last-4 = digits right

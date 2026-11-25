@@ -35,13 +35,14 @@ data class BudgetUiState(
 
 class BudgetViewModel(private val graph: AppGraph) : ViewModel() {
 
-    private val zone = ZoneId.systemDefault()
+    /** Read on every use: a time zone changed while the app runs is picked up by the next computation. */
+    private val zone: ZoneId get() = ZoneId.systemDefault()
 
     val state: StateFlow<BudgetUiState> = combine(
         graph.transactions.all,
         graph.categories.categories,
         graph.budgets.all,
-        graph.settings.settings,
+        graph.daySettings,
     ) { txs, cats, budgets, settings ->
         val month = YearMonth.now(zone)
         // Tracking start: usage, category usage and history only count transactions from it on.
@@ -54,7 +55,8 @@ class BudgetViewModel(private val graph: AppGraph) : ViewModel() {
             var count = 0
             while (firstMonth != null && !m.isBefore(firstMonth) && count < 12) {
                 val p = MonthPeriod(m, zone)
-                val spent = summaries.filter { p.contains(it.timestamp) }.sumOf { it.myShare }
+                // Net, like every other total: a refund is subtracted, "לא נספר" is not counted.
+                val spent = summaries.filter { p.contains(it.timestamp) }.sumOf { it.net }
                 add(BudgetHistoryItem(m, spent, Money.toShekels(BudgetRepository.resolve(budgets, m))))
                 m = m.minusMonths(1); count++
             }
@@ -63,11 +65,18 @@ class BudgetViewModel(private val graph: AppGraph) : ViewModel() {
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BudgetUiState())
 
     fun setTotalBudget(shekels: Double) {
-        viewModelScope.launch { graph.budgets.setBudgetFrom(YearMonth.now(zone), Money.toAgorot(shekels)) }
+        viewModelScope.launch {
+            graph.budgets.setBudgetFrom(YearMonth.now(zone), Money.toAgorot(shekels))
+            // A lower budget may already be crossed by what was spent: alert now, not at the next expense.
+            runCatching { graph.alertChecker.checkAndNotify() }
+        }
     }
 
     fun setCategoryBudget(categoryId: String, shekels: Double?) {
-        viewModelScope.launch { graph.categories.setCategoryBudget(categoryId, shekels?.let { Money.toAgorot(it) }) }
+        viewModelScope.launch {
+            graph.categories.setCategoryBudget(categoryId, shekels?.let { Money.toAgorot(it) })
+            runCatching { graph.alertChecker.checkAndNotify() }
+        }
     }
 
     fun setAlert80(enabled: Boolean) { viewModelScope.launch { graph.settings.setAlert80(enabled) } }

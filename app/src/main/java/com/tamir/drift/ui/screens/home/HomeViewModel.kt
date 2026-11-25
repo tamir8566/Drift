@@ -40,6 +40,8 @@ data class HomeUiState(
     val savedThisMonth: Double = 0.0,
     /** True when SMS senders are configured, i.e. the SMS permission matters for capture. */
     val smsCaptureConfigured: Boolean = true,
+    /** True when notification packages are configured, i.e. notification access matters for capture. */
+    val notificationCaptureConfigured: Boolean = true,
     /** The goal screen's "בכיוון" / "לא בכיוון" for this month; null until loaded. */
     val goalOnTrack: Boolean? = null,
     /** Merchants whose expenses sit in "אחר" with no learned rule ("N בתי עסק מחכים לסיווג"). */
@@ -60,7 +62,7 @@ class HomeViewModel(private val graph: AppGraph) : ViewModel() {
         catalog,
         graph.budgets.all,
         graph.work.shifts,
-        graph.settings.settings,
+        graph.daySettings,
     ) { txs, (cats, rules), budgets, shifts, settings ->
         val zone = ZoneId.systemDefault()
         val today = LocalDate.now(zone)
@@ -76,7 +78,7 @@ class HomeViewModel(private val graph: AppGraph) : ViewModel() {
         val countedShifts = shifts.toShiftSummaries().sinceStart(window)
         val allTxSummaries = txs.toSummaries()
         val countedTxs = allTxSummaries.sinceStart(window, zone)
-        val earnedAgorot = GoalCalculator.earnedIn(countedShifts, month)
+        val earnedAgorot = GoalCalculator.earnedIn(countedShifts, month, today.toEpochDay())
         val spentBefore = today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
         val spentAgorot = GoalCalculator.spentIn(countedTxs, month, zone, spentBefore)
         val earned = Money.toShekels(earnedAgorot)
@@ -88,7 +90,7 @@ class HomeViewModel(private val graph: AppGraph) : ViewModel() {
             month = month,
             today = today,
             zone = zone,
-            goalAgorot = settings.monthlySavingGoalAgorot,
+            goal = settings.monthlySavingGoal,
             mainRateAgorot = 0L,
             startDate = window.startDate,
         )
@@ -104,6 +106,7 @@ class HomeViewModel(private val graph: AppGraph) : ViewModel() {
             earnedThisMonth = earned,
             savedThisMonth = Money.toShekels(earnedAgorot - spentAgorot),
             smsCaptureConfigured = settings.smsSenders.isNotEmpty(),
+            notificationCaptureConfigured = settings.notificationPackages.isNotEmpty(),
             goalOnTrack = goalStatus.onTrack,
             unsortedMerchants = UnsortedMerchants.find(allTxSummaries, ruleModels).size,
             backupFailed = settings.backupAutoEnabled && settings.backupAutoFailedMillis > 0L,
